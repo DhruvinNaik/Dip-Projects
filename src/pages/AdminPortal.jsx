@@ -8,14 +8,16 @@ import "./AdminPortal.css";
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
-import { canAccessPortal, filterNav } from "../access.js";
+import { canAccessPortal, filterNav, getAllowedKeys, isAdminUser } from "../access.js";
+import { pickPermissionFields } from "../lib/permissions";
 import OrgHierarchy from "./OrgHierarchy";
+import PermissionsPanel from "../components/PermissionsPanel";
+import PortalSwitcher from "../components/PortalSwitcher";
 import {
   TaskForm as TaskFormWithCheckpoints,
   EMPTY_FORM,
   AudioRecorder,
 } from "./Taskformwithcheckpoints.jsx";
- 
 const NAV_ITEMS = [
   {
     key: "dashboard",
@@ -6249,7 +6251,38 @@ const [delayReportMeta, setDelayReportMeta] = useState(null);
   const [detailTask, setDetailTask] = useState(null);
   useEffect(() => {
     const s = localStorage.getItem("user");
-    if (s) setUser(JSON.parse(s));
+    if (!s) return;
+    const parsed = JSON.parse(s);
+    setUser(parsed);
+
+    supabase
+      .from("user_details")
+      .select(
+        "username, site_name, site_names, department, role, can_add_task, can_add_site, can_add_employee, can_resolve_tickets, can_verify, is_mis_executive, can_switch_office_site, can_switch_office_mdo",
+      )
+      .eq("username", parsed.user_name)
+      .single()
+      .then(({ data }) => {
+        if (!data) return;
+        const updated = {
+          ...parsed,
+          site_name: data.site_name ?? parsed.site_name,
+          site_names: data.site_names ?? (parsed.site_name ? [parsed.site_name] : []),
+          department: data.department ?? parsed.department,
+          role: data.role ?? parsed.role,
+          ...pickPermissionFields(data),
+        };
+        setUser(updated);
+        localStorage.setItem("user", JSON.stringify(updated));
+
+        // Permission-only users: land on first allowed section, not full dashboard.
+        if (!isAdminUser(updated)) {
+          const allowed = getAllowedKeys(updated, "admin");
+          if (allowed.length && !allowed.includes("dashboard")) {
+            setActiveTab(allowed[0]);
+          }
+        }
+      });
   }, []);
   const fetchPendingVerifications = useCallback(async () => {
     setLoadingVerifications(true);
@@ -6746,6 +6779,9 @@ const handleNavClick = (key) => {
         fetchEmployees();
         break;
       case "org-hierarchy":
+        fetchEmployees();
+        break;
+      case "permissions":
         fetchEmployees();
         break;
       case "add-site":
@@ -10504,11 +10540,16 @@ const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filt
 
       case "permissions":
         return (
-          <div className="op-empty-state">
-            <p className="op-empty-text">
-              Permissions isn't built yet — this section is a placeholder.
-            </p>
-          </div>
+          <PermissionsPanel
+            employees={employees}
+            loading={loadingEmployees}
+            showToast={showToast}
+            onChanged={(id, flag, next) => {
+              setEmployees((prev) =>
+                prev.map((e) => (e.id === id ? { ...e, [flag]: next } : e)),
+              );
+            }}
+          />
         );
 
       case "delay-report": {
@@ -11976,43 +12017,6 @@ case "all-drawings":
           )}
           <aside className={`op-sidebar${sidebarOpen ? "" : " collapsed"}`}>
             <div className="op-sidebar-header">
-              {canSwitchToOffice && (
-                <button
-                  onClick={() => window.location.assign("/office")}
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 6,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: "#eb2525",
-                    background: "#fef2f2",
-                    border: "1px solid #f88a8abe",
-                    borderRadius: 8,
-                    padding: "6px 10px",
-                    cursor: "pointer",
-                  }}
-                  title="Switch to Office view"
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M8 3L4 7l4 4" />
-                    <path d="M4 7h16" />
-                    <path d="M16 21l4-4-4-4" />
-                    <path d="M20 17H4" />
-                  </svg>
-                  Switch to Office
-                </button>
-              )}
-
               <button
                 className="op-sidebar-close"
                 aria-label="Close sidebar"
@@ -12032,6 +12036,16 @@ case "all-drawings":
                 </svg>
               </button>
             </div>
+            <PortalSwitcher
+              items={[
+                canSwitchToOffice && {
+                  key: "office",
+                  label: "Office",
+                  href: "/office",
+                  title: "Open Office portal",
+                },
+              ].filter(Boolean)}
+            />
             <nav className="op-nav">
             {filterNav(NAV_ITEMS.slice(0, 6), user, "admin").map((item) => {
               const isActive = activeTab === item.key;
@@ -12061,6 +12075,8 @@ case "all-drawings":
                 </button>
               );
             })}
+              {filterNav(VERIFICATION_NAV, user, "admin").length > 0 && (
+                <>
               <span className="op-nav-section">Task Verification</span>
               {filterNav(VERIFICATION_NAV, user, "admin").map((item) => {
                 const isActive = activeTab === item.key;
@@ -12093,6 +12109,10 @@ case "all-drawings":
                   </button>
                 );
               })}
+                </>
+              )}
+              {filterNav(TICKETS_NAV, user, "admin").length > 0 && (
+                <>
               <span className="op-nav-section">Ticket Raised</span>
               {filterNav(TICKETS_NAV, user, "admin").map((item) => {
                 const isActive = activeTab === item.key;
@@ -12122,6 +12142,10 @@ case "all-drawings":
                   </button>
                 );
               })}
+                </>
+              )}
+              {filterNav(NAV_ITEMS.slice(6, 9), user, "admin").length > 0 && (
+                <>
               <span className="op-nav-section">Employee Management</span>
               {filterNav(NAV_ITEMS.slice(6, 9), user, "admin").map((item) => {
                 const isActive = activeTab === item.key;
@@ -12145,6 +12169,10 @@ case "all-drawings":
                   </button>
                 );
               })}
+                </>
+              )}
+              {filterNav(NAV_ITEMS.slice(9), user, "admin").length > 0 && (
+                <>
               <span className="op-nav-section">Site Management</span>
               {filterNav(NAV_ITEMS.slice(9), user, "admin").map((item) => {
                 const isActive = activeTab === item.key;
@@ -12168,6 +12196,10 @@ case "all-drawings":
                   </button>
                 );
               })}
+                </>
+              )}
+              {filterNav(REPORTS_NAV, user, "admin").length > 0 && (
+                <>
               <span className="op-nav-section">Drawings & Reports</span>
               {filterNav(REPORTS_NAV, user, "admin").map((item) => {
                 const isActive = activeTab === item.key;
@@ -12191,7 +12223,11 @@ case "all-drawings":
                   </button>
                 );
               })}
+                </>
+              )}
 
+              {filterNav(INSIGHTS_NAV, user, "admin").length > 0 && (
+                <>
               <span className="op-nav-section">Insights & Compliance</span>
               {filterNav(INSIGHTS_NAV, user, "admin").map((item) => {
                 const isActive = activeTab === item.key;
@@ -12214,7 +12250,9 @@ case "all-drawings":
                     {item.label}
                   </button>
                 );
-              })}              
+              })}
+                </>
+              )}
             </nav>
           </aside>
 

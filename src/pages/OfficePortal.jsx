@@ -5,7 +5,9 @@ import { supabase } from "../supabase";
 import SiteReport from "./Sitereport";
 import Checklists from "./Checklists";
 import "./OfficePortal.css";
-import { canAccessPortal, filterNav } from "../access.js";
+import { canAccessPortal, filterNav, hasPermission, hasAdminCapability } from "../access.js";
+import { pickPermissionFields } from "../lib/permissions";
+import PortalSwitcher from "../components/PortalSwitcher";
 import {
   resolveApprovalChain,
   deriveLeaveStatus,
@@ -1690,7 +1692,7 @@ function MyLeaveTable({ leaves }) {
     </div>
   );
 }
-function NewTicketsTable({ tickets, onSolve, updatingId }) {
+function NewTicketsTable({ tickets, onSolve, updatingId, canSolve }) {
   const fmt = (d) =>
     d
       ? new Date(d).toLocaleDateString("en-IN", {
@@ -1784,13 +1786,17 @@ function NewTicketsTable({ tickets, onSolve, updatingId }) {
                 </td>
                 <td onClick={(e) => e.stopPropagation()}>
                   {t.status === "open" ? (
-                    <button
-                      className="lv-btn-approve"
-                      disabled={updatingId === t.id}
-                      onClick={() => onSolve(t)}
-                    >
-                      Mark Solved
-                    </button>
+                    canSolve ? (
+                      <button
+                        className="lv-btn-approve"
+                        disabled={updatingId === t.id}
+                        onClick={() => onSolve(t)}
+                      >
+                        Mark Solved
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 11.5, color: "#94a3b8" }}>Open</span>
+                    )
                   ) : (
                     <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
                       ✓ Solved
@@ -2833,7 +2839,13 @@ const proxyCandidates = useMemo(
       .sort((a, b) => (a.name || "").localeCompare(b.name || "")),
   [engineerOfficeUsers, mdoOfficeUsers, user],
 );
-  const canSwitchToAdmin = canAccessPortal(user, "admin");
+  const canSwitchToAdmin = canAccessPortal(user, "admin") || hasAdminCapability(user);
+  const canSwitchToMdo = hasPermission(user, "can_switch_office_mdo");
+  const canSwitchToSite = hasPermission(user, "can_switch_office_site");
+  const canResolveTickets =
+    hasPermission(user, "can_resolve_tickets") ||
+    hasPermission(user, "is_mis_executive");
+  const canVerifyTasks = hasPermission(user, "can_verify");
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "smooth" });
     mainRef.current?.scrollTo({ top: 0, behavior: "smooth" });
@@ -2899,7 +2911,7 @@ const fetchMyVerifications = useCallback(async (u) => {
   useEffect(() => {
   supabase
     .from("user_details")
-    .select("username, name, department")
+    .select("username, name, department, can_verify")
     .then(({ data, error }) => {
       if (!error && data) {
         setAdminUsers(
@@ -2907,7 +2919,8 @@ const fetchMyVerifications = useCallback(async (u) => {
             (u) =>
               String(u.department || "")
                 .trim()
-                .toLowerCase() === "admin",
+                .toLowerCase() === "admin" ||
+              !!u.can_verify,
           ),
         );
       }
@@ -2917,15 +2930,18 @@ const [technicalUsers, setTechnicalUsers] = useState([]);
 useEffect(() => {
   supabase
     .from("user_details")
-    .select("username, name, role")
+    .select("username, name, role, is_mis_executive, can_resolve_tickets")
     .then(({ data, error }) => {
       if (!error && data) {
         setTechnicalUsers(
-          data.filter((u) =>
-            ["mis head", "mis executive"].includes(
-              String(u.role || "").trim().toLowerCase(),
-            ),
-          ),
+          data.filter((u) => {
+            const role = String(u.role || "").trim().toLowerCase();
+            return (
+              ["mis head", "mis executive"].includes(role) ||
+              !!u.is_mis_executive ||
+              !!u.can_resolve_tickets
+            );
+          }),
         );
       }
     });
@@ -3166,7 +3182,9 @@ const [leaveForm, setLeaveForm] = useState({
 
     supabase
       .from("user_details")
-      .select("username, site_name, site_names, department")
+      .select(
+        "username, site_name, site_names, department, role, can_add_task, can_add_site, can_add_employee, can_resolve_tickets, can_verify, is_mis_executive, can_switch_office_site, can_switch_office_mdo",
+      )
       .eq("username", parsed.user_name)
       .single()
       .then(({ data, error }) => {
@@ -3181,6 +3199,8 @@ const [leaveForm, setLeaveForm] = useState({
           site_name: data.site_name ?? parsed.site_name,
           site_names: data.site_names ?? (parsed.site_name ? [parsed.site_name] : []),
           department: data.department ?? parsed.department,
+          role: data.role ?? parsed.role,
+          ...pickPermissionFields(data),
         };
         console.log("🔍 updated user object:", updated); 
         setUser(updated);
@@ -4635,6 +4655,7 @@ case "all-tasks":
           <NewTicketsTable
             tickets={newTickets}
             updatingId={updatingTicketId}
+            canSolve={canResolveTickets}
             onSolve={(t) =>
               setTicketSolveModal({ ticket: t, note: "", file: null })
             }
@@ -6458,23 +6479,6 @@ case "all-drawings":
           )}
           <aside className={`op-sidebar${sidebarOpen ? "" : " collapsed"}`}>
             <div className="op-sidebar-header">
-              {canSwitchToAdmin && (
-                <button
-                  onClick={() => window.location.assign("/admin")}
-                  style={{display: "inline-flex", alignItems: "center", gap: 6,
-                    fontSize: 12, fontWeight: 700, color: "#2563eb",
-                    background: "#eff6ff", border: "1px solid #bfdbfe",
-                    borderRadius: 8, padding: "6px 10px", cursor: "pointer",
-                  }}
-                  title="Switch to Admin view"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 3L4 7l4 4" /><path d="M4 7h16" />
-                    <path d="M16 21l4-4-4-4" /><path d="M20 17H4" />
-                  </svg>
-                  Switch to Admin
-                </button>
-              )}
               <button
                 className="op-sidebar-close"
                 aria-label="Close sidebar"
@@ -6494,6 +6498,28 @@ case "all-drawings":
                 </svg>
               </button>
             </div>
+            <PortalSwitcher
+              items={[
+                canSwitchToAdmin && {
+                  key: "admin",
+                  label: "Admin",
+                  href: "/admin",
+                  title: "Open Admin portal",
+                },
+                canSwitchToMdo && {
+                  key: "mdo",
+                  label: "MDO",
+                  href: "/mdo",
+                  title: "Open MDO portal",
+                },
+                canSwitchToSite && {
+                  key: "site",
+                  label: "Site",
+                  href: "/site",
+                  title: "Open Site portal",
+                },
+              ].filter(Boolean)}
+            />
             <nav className="op-nav">
               <span className="op-nav-section">Tasks</span>
             {filterNav(TASK_NAV.filter(
@@ -6512,7 +6538,8 @@ case "all-drawings":
               />
             ))}
 
-            {verifyRequests.length > 0 && filterNav([VERIFY_REQUESTS_ITEM], user, "office").length > 0 && (
+            {((verifyRequests.length > 0 && filterNav([VERIFY_REQUESTS_ITEM], user, "office").length > 0) ||
+              canVerifyTasks) && (
               <NavButton
                 itemKey="verify-requests"
                 icon={VERIFY_REQUESTS_ITEM.icon}
@@ -6528,7 +6555,9 @@ case "all-drawings":
 
             <span className="op-nav-section" style={{ marginTop: 8 }}>Tickets</span>
 
-            {newTickets.length > 0 && (
+            {((newTickets.length > 0 &&
+              filterNav([NEW_TICKETS_ITEM], user, "office").length > 0) ||
+              canResolveTickets) && (
               <NavButton
                 itemKey="new-tickets"
                 icon={NEW_TICKETS_ITEM.icon}

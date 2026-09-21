@@ -96,6 +96,14 @@ const userData = {
       site_name:   userRow.site_name || "",
       site_names:  userRow.site_names || null,
       designation: userRow.department || "",
+      can_add_task: !!userRow.can_add_task,
+      can_add_site: !!userRow.can_add_site,
+      can_add_employee: !!userRow.can_add_employee,
+      can_resolve_tickets: !!userRow.can_resolve_tickets,
+      can_verify: !!userRow.can_verify,
+      is_mis_executive: !!userRow.is_mis_executive,
+      can_switch_office_site: !!userRow.can_switch_office_site,
+      can_switch_office_mdo: !!userRow.can_switch_office_mdo,
     };
     localStorage.setItem("user", JSON.stringify(userData));
     const next = getSafeNext();

@@ -494,10 +494,16 @@
 .pf-body {
   flex: 1;
   overflow-y: auto;
-  background: #ebf0f5;
   padding: 14px 12px 10px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  background-color: #ebf0f5;
+  background-image:
+    linear-gradient(rgba(235, 240, 245, 0.88), rgba(235, 240, 245, 0.88)),
+    var(--pf-wm);
+  background-repeat: no-repeat;
+  background-position: center center;
+  background-size: auto, min(200px, 48%);
 }
 
 .pf-empty {
@@ -670,6 +676,19 @@
   outline: none;
   color: #0f172a;
   min-width: 0;
+}
+
+.pf-input-area {
+  resize: none;
+  min-height: 40px;
+  max-height: 120px;
+  line-height: 1.4;
+  font-family: inherit;
+  overflow-y: auto;
+}
+
+.pf-composer .pf-send {
+  align-self: flex-end;
 }
 
 .pf-input:focus {
@@ -999,12 +1018,17 @@
     position: fixed;
     inset: 0;
     z-index: 1805;
-    background: rgba(15, 23, 42, 0.35);
+    background: rgba(15, 23, 42, 0.28);
     border: none;
     padding: 0;
+    /* Allow scroll gesture forwarding from JS; keep click-to-close */
+    touch-action: none;
+    cursor: default;
   }
 
   .pf-panel {
+    /* Panel stays above backdrop and keeps its own scroll */
+    overscroll-behavior: contain;
     right: 0;
     left: 0;
     bottom: 0;

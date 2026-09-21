@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabase";
 import { answerDipQuery, DIP_CHIPS } from "../lib/dipBot";
+import logoUrl from "../assets/logo.png";
 import "./PortalFloaters.css";
 
 function getStoredUser() {
@@ -162,9 +163,6 @@ function useMobileViewportLock() {
   const [vvStyle, setVvStyle] = useState(null);
 
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-
     let raf = 0;
     const apply = () => {
       cancelAnimationFrame(raf);
@@ -208,7 +206,6 @@ function useMobileViewportLock() {
     window.addEventListener("orientationchange", apply);
     return () => {
       cancelAnimationFrame(raf);
-      document.body.style.overflow = prevOverflow;
       vv?.removeEventListener("resize", apply);
       vv?.removeEventListener("scroll", apply);
       window.removeEventListener("resize", apply);
@@ -299,11 +296,14 @@ function ResizablePanel({ storageKey, label, children }) {
     return () => mq.removeEventListener?.("change", sync);
   }, []);
 
-  const panelStyle = vvStyle
-    ? vvStyle
-    : isMobile
-      ? undefined
-      : { width: size.w, height: size.h };
+  const panelStyle = {
+    "--pf-wm": `url(${logoUrl})`,
+    ...(vvStyle
+      ? vvStyle
+      : isMobile
+        ? {}
+        : { width: size.w, height: size.h }),
+  };
 
   return (
     <div
@@ -2011,15 +2011,21 @@ function ChatPanel({
               send();
             }}
           >
-            <input
-              className="pf-input"
+            <textarea
+              className="pf-input pf-input-area"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
               onFocus={holdWindowScroll}
+              onKeyDown={(e) => {
+                // Enter = new line; send only via the Send button
+                if (e.key === "Enter") e.stopPropagation();
+              }}
               placeholder={`Message ${peer.name || peer.username}…`}
-              enterKeyHint="send"
+              rows={2}
+              enterKeyHint="enter"
             />
             <button
+              type="submit"
               className="pf-send chat"
               disabled={sending || !draft.trim()}
               aria-label="Send"
@@ -2166,6 +2172,8 @@ export default function PortalFloaters({ showBot = false }) {
     };
   }, [me, refreshUnread]);
 
+  const backdropTouchY = useRef(null);
+
   if (!user) return null;
 
   return (
@@ -2175,6 +2183,23 @@ export default function PortalFloaters({ showBot = false }) {
           className="pf-backdrop"
           aria-label="Close popup"
           onClick={() => setOpen(null)}
+          onWheel={(e) => {
+            // Let page scroll when wheel is over the dimmed area outside the panel.
+            window.scrollBy({ top: e.deltaY, left: e.deltaX });
+          }}
+          onTouchStart={(e) => {
+            backdropTouchY.current = e.touches[0]?.clientY ?? null;
+          }}
+          onTouchMove={(e) => {
+            const y = e.touches[0]?.clientY;
+            if (backdropTouchY.current == null || y == null) return;
+            const dy = backdropTouchY.current - y;
+            backdropTouchY.current = y;
+            window.scrollBy(0, dy);
+          }}
+          onTouchEnd={() => {
+            backdropTouchY.current = null;
+          }}
         />
       )}
       {showBot && open === "bot" && (

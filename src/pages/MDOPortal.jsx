@@ -2,6 +2,9 @@ import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Navbar from "../components/Navbar";
 import PortalFloaters from "../components/PortalFloaters";
+import { hasPermission, hasAdminCapability } from "../access.js";
+import { pickPermissionFields } from "../lib/permissions";
+import PortalSwitcher from "../components/PortalSwitcher";
 import "./SitePortal.css";
 import MonthEndReport from "./MonthEndReport.jsx";
 //   npm install jspdf jspdf-autotable
@@ -1753,7 +1756,9 @@ const handleDrawingSubmit = async () => {
     // Pull fresh site_names so the MDO always sees their current site list
     const { data } = await supabase
       .from("user_details")
-      .select("site_name, site_names, department")
+      .select(
+        "site_name, site_names, department, role, can_add_task, can_add_site, can_add_employee, can_resolve_tickets, can_verify, is_mis_executive, can_switch_office_site, can_switch_office_mdo",
+      )
       .eq("id", parsed.id)
       .single();
 
@@ -1763,6 +1768,8 @@ const handleDrawingSubmit = async () => {
         site_name: data.site_name ?? parsed.site_name,
         site_names: data.site_names ?? (parsed.site_name ? [parsed.site_name] : []),
         department: data.department ?? parsed.department,
+        role: data.role ?? parsed.role,
+        ...pickPermissionFields(data),
       };
       setUser(updated);
       localStorage.setItem("user", JSON.stringify(updated));
@@ -1828,6 +1835,22 @@ useEffect(() => {
         )}
 
         <aside className={`sidebar${sidebarOpen ? "" : " closed"}`}>
+          <PortalSwitcher
+            items={[
+              hasAdminCapability(user) && {
+                key: "admin",
+                label: "Admin",
+                href: "/admin",
+                title: "Open Admin portal",
+              },
+              hasPermission(user, "can_switch_office_mdo") && {
+                key: "office",
+                label: "Office",
+                href: "/office",
+                title: "Open Office portal",
+              },
+            ].filter(Boolean)}
+          />
           <div style={{ padding: "14px 14px 6px", fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--ink3)", textTransform: "uppercase" }}>
             MDO Office Portal
           </div>

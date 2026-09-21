@@ -11,7 +11,9 @@ import Profile from "./Profile";
 import WprGenerator from "./Wprgenerator.jsx";
 import MatRequirement from "./MatRequirement.jsx";
 import { useMaterialUnseenCount } from "./MatRequirement"; // adjust path
-import { canAccessPortal } from "../access.js";
+import { canAccessPortal, hasPermission, hasAdminCapability } from "../access.js";
+import { pickPermissionFields } from "../lib/permissions";
+import PortalSwitcher from "../components/PortalSwitcher";
 import "./SitePortal.css";
 import { computeMonthlyLeaveBalance, isMonthlyLeaveRole } from "./leaveUtils.js";
 import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
@@ -1667,7 +1669,8 @@ function SniButton({ itemKey, icon, label, isActive, onClick, badge, style }) {
   const [leaveBadgeCount, setLeaveBadgeCount] = useState(0);
   const [approvalsPendingCount, setApprovalsPendingCount] = useState(0);
   const [isApprover, setIsApprover] = useState(false);
-  const canSwitchToAdmin = canAccessPortal(user, "admin");
+  const canSwitchToAdmin = canAccessPortal(user, "admin") || hasAdminCapability(user);
+  const canSwitchToOffice = hasPermission(user, "can_switch_office_site");
   const checkIsApprover = useCallback(async (u) => {
     if (!u?.user_name) return;
     const { count } = await supabase
@@ -1877,7 +1880,9 @@ useEffect(() => {
       (async () => {
         const { data } = await supabase
           .from("user_details")
-          .select("site_name, site_names, department")
+          .select(
+            "site_name, site_names, department, role, can_add_task, can_add_site, can_add_employee, can_resolve_tickets, can_verify, is_mis_executive, can_switch_office_site, can_switch_office_mdo",
+          )
           .eq("id", parsed.id)
           .single();
         if (data) {
@@ -1887,6 +1892,8 @@ useEffect(() => {
             site_names:
               data.site_names ?? (parsed.site_name ? [parsed.site_name] : []),
             department: data.department ?? parsed.department,
+            role: data.role ?? parsed.role,
+            ...pickPermissionFields(data),
           };
           setUser(updated);
           localStorage.setItem("user", JSON.stringify(updated)); // keep localStorage fresh
@@ -2815,27 +2822,22 @@ useEffect(() => {
           <aside
             className={`sidebar${sidebarOpen ? "" : " closed"}`}
           >
-            {canSwitchToAdmin && (
-              <div style={{ padding: "14px 14px 0" }}>
-                <button
-                  onClick={() => window.location.assign("/admin")}
-                  style={{
-                    display: "inline-flex", alignItems: "center", gap: 6,
-                    fontSize: 12, fontWeight: 700, color: "#eb2525",
-                    background: "#fef2f2", border: "1px solid #f88a8abe",
-                    borderRadius: 8, padding: "6px 10px", cursor: "pointer",
-                    width: "100%", justifyContent: "center",
-                  }}
-                  title="Switch to Admin view"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M8 3L4 7l4 4" /><path d="M4 7h16" />
-                    <path d="M16 21l4-4-4-4" /><path d="M20 17H4" />
-                  </svg>
-                  Switch to Admin
-                </button>
-              </div>
-            )}
+            <PortalSwitcher
+              items={[
+                canSwitchToAdmin && {
+                  key: "admin",
+                  label: "Admin",
+                  href: "/admin",
+                  title: "Open Admin portal",
+                },
+                canSwitchToOffice && {
+                  key: "office",
+                  label: "Office",
+                  href: "/office",
+                  title: "Open Office portal",
+                },
+              ].filter(Boolean)}
+            />
 
             <nav className="snav">
               {NAV.map((n) => {

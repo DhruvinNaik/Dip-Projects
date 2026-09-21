@@ -157,7 +157,7 @@ function usePanelSize(storageKey) {
   return { size, onResizeStart };
 }
 
-/** Pin floating panels to the visible area above the mobile keyboard (WhatsApp-like). */
+/** Pin floating panels inside the mobile visual viewport (above keyboard). */
 function useMobileViewportLock() {
   const [vvStyle, setVvStyle] = useState(null);
 
@@ -165,27 +165,38 @@ function useMobileViewportLock() {
     const prevOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
 
+    let raf = 0;
     const apply = () => {
-      const mobile = window.matchMedia("(max-width: 760px)").matches;
-      const vv = window.visualViewport;
-      if (!mobile || !vv) {
-        setVvStyle(null);
-        return;
-      }
-      const keyboardOpen = window.innerHeight - vv.height > 60;
-      if (!keyboardOpen) {
-        setVvStyle(null);
-        return;
-      }
-      setVvStyle({
-        top: `${Math.max(0, vv.offsetTop)}px`,
-        left: `${Math.max(0, vv.offsetLeft)}px`,
-        right: "auto",
-        bottom: "auto",
-        width: `${vv.width}px`,
-        height: `${vv.height}px`,
-        maxHeight: `${vv.height}px`,
-        borderRadius: "0",
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(() => {
+        const mobile = window.matchMedia("(max-width: 760px)").matches;
+        if (!mobile) {
+          setVvStyle(null);
+          return;
+        }
+        const vv = window.visualViewport;
+        const height = vv?.height ?? window.innerHeight;
+        const width = vv?.width ?? window.innerWidth;
+        const offsetTop = vv?.offsetTop ?? 0;
+        const offsetLeft = vv?.offsetLeft ?? 0;
+        const layoutH = window.innerHeight;
+        const keyboardOpen = layoutH - height > 50 || offsetTop > 0;
+        // Full visible height with keyboard; bottom sheet otherwise.
+        const sheetH = Math.max(
+          280,
+          Math.round(keyboardOpen ? height : Math.min(height * 0.86, height - 8)),
+        );
+        const top = Math.round(offsetTop + Math.max(0, height - sheetH));
+        setVvStyle({
+          top: `${top}px`,
+          left: `${offsetLeft}px`,
+          right: "auto",
+          bottom: "auto",
+          width: `${Math.round(width)}px`,
+          height: `${sheetH}px`,
+          maxHeight: `${sheetH}px`,
+          borderRadius: keyboardOpen ? "0px" : "16px 16px 0 0",
+        });
       });
     };
 
@@ -196,6 +207,7 @@ function useMobileViewportLock() {
     window.addEventListener("resize", apply);
     window.addEventListener("orientationchange", apply);
     return () => {
+      cancelAnimationFrame(raf);
       document.body.style.overflow = prevOverflow;
       vv?.removeEventListener("resize", apply);
       vv?.removeEventListener("scroll", apply);
@@ -275,12 +287,30 @@ function SeenTicks({ seen, light }) {
 function ResizablePanel({ storageKey, label, children }) {
   const { size, onResizeStart } = usePanelSize(storageKey);
   const vvStyle = useMobileViewportLock();
+  const [isMobile, setIsMobile] = useState(
+    () => typeof window !== "undefined" && window.matchMedia("(max-width: 760px)").matches,
+  );
+
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 760px)");
+    const sync = () => setIsMobile(mq.matches);
+    sync();
+    mq.addEventListener?.("change", sync);
+    return () => mq.removeEventListener?.("change", sync);
+  }, []);
+
+  const panelStyle = vvStyle
+    ? vvStyle
+    : isMobile
+      ? undefined
+      : { width: size.w, height: size.h };
+
   return (
     <div
-      className={`pf-panel${vvStyle ? " is-keyboard" : ""}`}
+      className={`pf-panel${vvStyle ? " is-mobile-sheet" : ""}`}
       role="dialog"
       aria-label={label}
-      style={{ width: size.w, height: size.h, ...(vvStyle || {}) }}
+      style={panelStyle}
     >
       <button
         type="button"

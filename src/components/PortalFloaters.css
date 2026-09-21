@@ -92,6 +92,7 @@
   border: 1px solid #e2e8f0;
   overscroll-behavior: contain;
   touch-action: manipulation;
+  box-sizing: border-box;
 }
 
 .pf-resize {
@@ -1007,15 +1008,25 @@
     right: 0;
     left: 0;
     bottom: 0;
+    top: auto;
     width: 100%;
-    height: min(86vh, 680px);
-    max-height: 100dvh;
+    width: 100dvw;
+    height: 85dvh;
+    max-height: calc(100dvh - 12px);
     border-radius: 16px 16px 0 0;
+    box-sizing: border-box;
   }
 
-  .pf-panel.is-keyboard {
-    /* size/position set from visualViewport in JS */
+  .pf-panel.is-mobile-sheet {
+    /* exact box comes from visualViewport in JS — keep CSS from fighting it */
     max-height: none;
+  }
+
+  .pf-composer {
+    width: 100%;
+    box-sizing: border-box;
+    padding-left: max(12px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
   }
 
   .pf-input {

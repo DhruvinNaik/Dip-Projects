@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabase";
-import { answerDipQuery, DIP_CHIPS } from "../lib/dipBot";
+import { answerDipQuery, DIP_CHIPS, DIP_HR_CHIPS } from "../lib/dipBot";
 import logoUrl from "../assets/logo.png";
 import "./PortalFloaters.css";
 
@@ -475,12 +475,16 @@ function ResultTable({ columns, rows }) {
   );
 }
 
-function DipPanel({ user, onClose }) {
+function DipPanel({ user, onClose, scope = "admin" }) {
+  const chips = scope === "hr" ? DIP_HR_CHIPS : DIP_CHIPS;
   const [messages, setMessages] = useState([
     {
       role: "bot",
-      text: `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot. Ask me who is on leave, task lists, delegated work, tickets, or anything else in this portal.`,
-      chips: DIP_CHIPS,
+      text:
+        scope === "hr"
+          ? `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot for HR. Ask me about employees, attendance, leaves, expenses, or documents.`
+          : `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot. Ask me who is on leave, task lists, delegated work, tickets, or anything else in this portal.`,
+      chips,
     },
   ]);
   const [draft, setDraft] = useState("");
@@ -498,7 +502,7 @@ function DipPanel({ user, onClose }) {
     setMessages((prev) => [...prev, { role: "user", text }]);
     setBusy(true);
     try {
-      const answer = await answerDipQuery(text, user);
+      const answer = await answerDipQuery(text, user, { scope });
       setMessages((prev) => [...prev, { role: "bot", ...answer }]);
     } catch (err) {
       setMessages((prev) => [
@@ -517,7 +521,11 @@ function DipPanel({ user, onClose }) {
         </div>
         <div className="pf-head-copy">
           <div className="pf-head-title">DIP Bot</div>
-          <div className="pf-head-sub">Ask about leaves, tasks, tickets & people</div>
+          <div className="pf-head-sub">
+            {scope === "hr"
+              ? "Ask about employees, attendance, leaves & HR data"
+              : "Ask about leaves, tasks, tickets & people"}
+          </div>
         </div>
         <button className="pf-icon-btn" onClick={onClose} aria-label="Close DIP Bot">
           <Ico name="close" />
@@ -565,7 +573,11 @@ function DipPanel({ user, onClose }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onFocus={holdWindowScroll}
-          placeholder="Ask DIP Bot…"
+          placeholder={
+            scope === "hr"
+              ? "Ask about leave, attendance, employees…"
+              : "Ask DIP Bot…"
+          }
           autoFocus
           enterKeyHint="send"
         />
@@ -2039,7 +2051,7 @@ function ChatPanel({
   );
 }
 
-export default function PortalFloaters({ showBot = false }) {
+export default function PortalFloaters({ showBot = false, botScope = "admin" }) {
   const user = getStoredUser();
   const me = user?.user_name || user?.username;
   const [open, setOpen] = useState(null);
@@ -2203,7 +2215,7 @@ export default function PortalFloaters({ showBot = false }) {
         />
       )}
       {showBot && open === "bot" && (
-        <DipPanel user={user} onClose={() => setOpen(null)} />
+        <DipPanel user={user} scope={botScope} onClose={() => setOpen(null)} />
       )}
       {open === "chat" && (
         <ChatPanel

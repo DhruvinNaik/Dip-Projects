@@ -2,6 +2,7 @@ import { supabase } from "../supabase";
 
 const CACHE_TTL_MS = 25000;
 let cache = { at: 0, data: null };
+let hrCache = { at: 0, data: null };
 
 export const DIP_CHIPS = [
   "Who is on leave today?",
@@ -10,6 +11,15 @@ export const DIP_CHIPS = [
   "Overdue tasks",
   "Open tickets",
   "Dashboard summary",
+];
+
+export const DIP_HR_CHIPS = [
+  "Who is on leave today?",
+  "Pending leave requests",
+  "Present today",
+  "Late today",
+  "Employee directory",
+  "HR dashboard summary",
 ];
 
 function ymd(date = new Date()) {
@@ -192,16 +202,18 @@ function findPeople(query, users) {
     const name = norm(u.name);
     const uname = norm(u.username);
     if (!name && !uname) return false;
-    return (
-      (name.length > 2 && q.includes(name)) ||
-      (uname.length > 2 && q.includes(uname)) ||
-      name.split(/\s+/).some((part) => part.length > 3 && q.includes(part))
-    );
+    if (name.length > 2 && q.includes(name)) return true;
+    if (uname.length > 2 && q.includes(uname)) return true;
+    const parts = name.split(/\s+/).filter((part) => part.length >= 3);
+    if (parts.length && parts.every((part) => q.includes(part))) return true;
+    return parts.some((part) => part.length >= 4 && q.includes(part));
   });
-  hits.sort(
-    (a, b) =>
-      String(b.name || "").length - String(a.name || "").length,
-  );
+  hits.sort((a, b) => {
+    const aFull = norm(a.name).length > 2 && q.includes(norm(a.name)) ? 1 : 0;
+    const bFull = norm(b.name).length > 2 && q.includes(norm(b.name)) ? 1 : 0;
+    if (bFull !== aFull) return bFull - aFull;
+    return String(b.name || "").length - String(a.name || "").length;
+  });
   return hits;
 }
 
@@ -296,7 +308,457 @@ function helpText(name) {
   };
 }
 
-export async function answerDipQuery(rawText, user) {
+function hrHelpText(name) {
+  return {
+    text: `Hi${name ? ` ${name}` : ""}, I’m DIP Bot for HR. I only answer people-ops questions from this portal.\n\nI can show:\n• Employees / directory\n• Attendance (present, late, absent, clock-in)\n• Leave today / this week / pending\n• Expenses & documents (when those tables are connected)\n• An HR dashboard summary\n\nI can’t help with tasks, tickets, or site operations.`,
+    chips: DIP_HR_CHIPS,
+  };
+}
+
+function fmtClock(ts) {
+  if (!ts) return "—";
+  try {
+    return new Date(ts).toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return "—";
+  }
+}
+
+async function loadHrContext() {
+  if (hrCache.data && Date.now() - hrCache.at < CACHE_TTL_MS) return hrCache.data;
+
+  const today = ymd();
+  const from = addDays(today, -45);
+
+  const [usersRes, leavesRes, attendanceRes, expensesRes, documentsRes] =
+    await Promise.all([
+      supabase
+        .from("user_details")
+        .select("*")
+        .order("name", { ascending: true }),
+      supabase
+        .from("leaves")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(800),
+      supabase
+        .from("attendance")
+        .select("user_name, name, date, clock_in, clock_out, clock_in_status")
+        .gte("date", from)
+        .lte("date", today)
+        .order("date", { ascending: false })
+        .limit(5000),
+      supabase.from("expenses").select("*").order("created_at", { ascending: false }).limit(300),
+      supabase.from("documents").select("*").order("created_at", { ascending: false }).limit(300),
+    ]);
+
+  hrCache = {
+    at: Date.now(),
+    data: {
+      users: usersRes.data || [],
+      leaves: leavesRes.data || [],
+      attendance: attendanceRes.data || [],
+      expenses: expensesRes.error ? [] : expensesRes.data || [],
+      documents: documentsRes.error ? [] : documentsRes.data || [],
+      expensesAvailable: !expensesRes.error,
+      documentsAvailable: !documentsRes.error,
+      errors: [usersRes.error, leavesRes.error, attendanceRes.error]
+        .filter(Boolean)
+        .map((e) => e.message),
+    },
+  };
+  return hrCache.data;
+}
+
+function attendanceStatus(row) {
+  if (!row?.clock_in) return "Absent";
+  if (norm(row.clock_in_status) === "late") return "Late";
+  return "Present";
+}
+
+function attendanceRows(list) {
+  return list.map((r) => ({
+    Name: r.name || r.user_name || "—",
+    Date: prettyDate(r.date),
+    Status: attendanceStatus(r),
+    In: fmtClock(r.clock_in),
+    Out: fmtClock(r.clock_out),
+  }));
+}
+
+async function answerHrDipQuery(rawText, user) {
+  const text = String(rawText || "").trim();
+  const q = norm(text);
+  if (!q) return hrHelpText(user?.name);
+
+  const ctx = await loadHrContext();
+  if (ctx.errors.length && !ctx.users.length && !ctx.leaves.length && !ctx.attendance.length) {
+    return { text: `I couldn’t load HR data right now.\n${ctx.errors[0]}` };
+  }
+
+  const people = findPeople(q, ctx.users);
+  const person = people[0] || null;
+  const today = ymd();
+  const tomorrow = addDays(today, 1);
+  const weekFrom = startOfWeek(today);
+  const weekTo = addDays(weekFrom, 6);
+
+  if (
+    /^(hi|hello|hey|yo|hola)\b/.test(q) ||
+    /\b(help|what can you|how do i|capabilities)\b/.test(q)
+  ) {
+    return hrHelpText(user?.name);
+  }
+
+  if (/\b(thank|thanks|thx)\b/.test(q)) {
+    return { text: "Anytime. Ask whenever you need attendance, leave, or employee info." };
+  }
+
+  if (
+    /\b(task|tasks|ticket|tickets|delegat|overdue task|site report|checklist)\b/.test(q)
+  ) {
+    return {
+      text: "In HR portal I only cover employees, attendance, leaves, expenses, and documents — not tasks or tickets. Try Admin portal for those.",
+      chips: DIP_HR_CHIPS,
+    };
+  }
+
+  if (/\b(dashboard|summary|overview|snapshot)\b/.test(q)) {
+    const onLeave = ctx.leaves.filter(
+      (l) => computeLeaveStatus(l) === "approved" && coversDate(l, today),
+    );
+    const pendingLeave = ctx.leaves.filter((l) => computeLeaveStatus(l) === "pending");
+    const todayAtt = ctx.attendance.filter((r) => r.date === today);
+    const present = todayAtt.filter((r) => r.clock_in && norm(r.clock_in_status) !== "late");
+    const late = todayAtt.filter((r) => r.clock_in && norm(r.clock_in_status) === "late");
+    const clocked = new Set(todayAtt.filter((r) => r.clock_in).map((r) => norm(r.user_name)));
+    const absent = ctx.users.filter((u) => {
+      const key = norm(u.username);
+      if (!key) return false;
+      const onLeaveToday = onLeave.some(
+        (l) => norm(l.user_name) === key || norm(l.name) === norm(u.name),
+      );
+      return !clocked.has(key) && !onLeaveToday;
+    });
+    return {
+      text: `HR snapshot for ${prettyDate(today)}`,
+      columns: ["Metric", "Count"],
+      rows: [
+        { Metric: "Employees", Count: String(ctx.users.length) },
+        { Metric: "Present today", Count: String(present.length) },
+        { Metric: "Late today", Count: String(late.length) },
+        { Metric: "Absent today (no clock-in)", Count: String(absent.length) },
+        { Metric: "On leave today", Count: String(onLeave.length) },
+        { Metric: "Pending leave requests", Count: String(pendingLeave.length) },
+        {
+          Metric: "Expense records",
+          Count: ctx.expensesAvailable ? String(ctx.expenses.length) : "Not connected",
+        },
+        {
+          Metric: "Document records",
+          Count: ctx.documentsAvailable ? String(ctx.documents.length) : "Not connected",
+        },
+      ],
+      chips: ["Who is on leave today?", "Present today", "Pending leave requests"],
+    };
+  }
+
+  if (/\b(expense|expenses|reimburs|company expense)\b/.test(q)) {
+    if (!ctx.expensesAvailable) {
+      return {
+        text: "Expenses data isn’t connected to DIP Bot yet. Once an expenses table is available in HR, I can list and summarize it here.",
+        chips: DIP_HR_CHIPS,
+      };
+    }
+    const rows = ctx.expenses.slice(0, 80).map((e) => ({
+      Title: e.title || e.description || e.category || "Expense",
+      Amount: e.amount != null ? String(e.amount) : "—",
+      By: e.name || e.user_name || e.created_by || "—",
+      Status: titleCase(e.status),
+      Date: prettyDate(e.date || e.created_at),
+    }));
+    const tbl = table(
+      ["Title", "Amount", "By", "Status", "Date"],
+      rows,
+      "No expense records found.",
+    );
+    return {
+      text: tbl.rows ? `${ctx.expenses.length} expense record${ctx.expenses.length === 1 ? "" : "s"}.` : tbl.text,
+      ...tbl,
+    };
+  }
+
+  if (/\b(document|documents|files|papers)\b/.test(q)) {
+    if (!ctx.documentsAvailable) {
+      return {
+        text: "Documents data isn’t connected to DIP Bot yet. Once HR documents are stored in the database, I can search them here.",
+        chips: DIP_HR_CHIPS,
+      };
+    }
+    const rows = ctx.documents.slice(0, 80).map((d) => ({
+      Name: d.name || d.title || d.file_name || "Document",
+      Type: d.type || d.category || d.doc_type || "—",
+      Employee: d.employee_name || d.name || d.user_name || "—",
+      Date: prettyDate(d.created_at || d.date),
+    }));
+    const tbl = table(
+      ["Name", "Type", "Employee", "Date"],
+      rows,
+      "No documents found.",
+    );
+    return {
+      text: tbl.rows ? `${ctx.documents.length} document${ctx.documents.length === 1 ? "" : "s"}.` : tbl.text,
+      ...tbl,
+    };
+  }
+
+  if (
+    /\b(employees?|staff|people|directory|workforce|team members?)\b/.test(q) ||
+    /\b(list|show|give|get)\b.+\b(all|every|entire)\b/.test(q) ||
+    /\bwho works\b/.test(q)
+  ) {
+    if (!/\bleave\b/.test(q) && !/\b(attend|clock|present|absent|late)\b/.test(q)) {
+      let list = ctx.users;
+      if (person && !/\b(all|every|entire|directory|list)\b/.test(q)) {
+        list = list.filter(
+          (u) =>
+            norm(u.username) === norm(person.username) ||
+            norm(u.name) === norm(person.name),
+        );
+      }
+      const rows = list.map((u) => ({
+        Name: u.name || u.username,
+        Role: u.role || u.designation || "—",
+        Department: u.department || "—",
+        Site: u.site_name || "—",
+        Status: u.status || "—",
+      }));
+      const tbl = table(
+        ["Name", "Role", "Department", "Site", "Status"],
+        rows,
+        "No employees matched that.",
+      );
+      return {
+        text: tbl.rows
+          ? `${list.length} employee${list.length === 1 ? "" : "s"}.`
+          : tbl.text,
+        ...tbl,
+        chips: DIP_HR_CHIPS,
+      };
+    }
+  }
+
+  if (/\b(leave|leaves|off today|on leave)\b/.test(q)) {
+    let list = ctx.leaves;
+    let label = "leave requests";
+    if (/\breject/.test(q)) {
+      list = list.filter((l) => computeLeaveStatus(l) === "rejected");
+      label = "rejected leave requests";
+    } else if (/\bpending|approval|to approve|awaiting\b/.test(q)) {
+      list = list.filter((l) => computeLeaveStatus(l) === "pending");
+      label = "pending leave requests";
+    } else if (/\btomorrow\b/.test(q)) {
+      list = list.filter(
+        (l) => computeLeaveStatus(l) === "approved" && coversDate(l, tomorrow),
+      );
+      label = "people on leave tomorrow";
+    } else if (/\b(this week|week)\b/.test(q)) {
+      list = list.filter(
+        (l) =>
+          computeLeaveStatus(l) === "approved" &&
+          overlapsRange(l, weekFrom, weekTo),
+      );
+      label = `people on leave this week (${prettyDate(weekFrom)} – ${prettyDate(weekTo)})`;
+    } else if (/\btoday\b/.test(q) || /\bon leave\b/.test(q) || /\bwho'?s\b/.test(q)) {
+      list = list.filter(
+        (l) => computeLeaveStatus(l) === "approved" && coversDate(l, today),
+      );
+      label = "people on leave today";
+    } else if (/\bapproved\b/.test(q)) {
+      list = list.filter((l) => computeLeaveStatus(l) === "approved");
+      label = "approved leave requests";
+    }
+    if (person) {
+      const keys = [person.username, person.name].map(norm);
+      list = list.filter(
+        (l) => keys.includes(norm(l.user_name)) || keys.includes(norm(l.name)),
+      );
+      label += ` for ${person.name || person.username}`;
+    }
+    const tbl = table(
+      ["Name", "Type", "From", "To", "Status", "Site"],
+      leaveRows(list),
+      `No ${label}.`,
+    );
+    return {
+      text: tbl.rows ? `${list.length} ${label}.` : tbl.text,
+      ...tbl,
+      chips: ["Pending leave requests", "Who is on leave this week?", "Present today"],
+    };
+  }
+
+  const wantsAttendance =
+    /\b(attend|attendance|present|absent|late|clock|clocked|punch|check[- ]?in|check[- ]?out)\b/.test(
+      q,
+    ) ||
+    (person &&
+      /\b(when|last|today|yesterday|in time|out time)\b/.test(q));
+
+  if (wantsAttendance) {
+    let list = ctx.attendance.filter((r) => r.date === today);
+    let label = "attendance today";
+    let highlight = "";
+
+    if (/\byesterday\b/.test(q)) {
+      const y = addDays(today, -1);
+      list = ctx.attendance.filter((r) => r.date === y);
+      label = `attendance on ${prettyDate(y)}`;
+    } else if (/\b(this week|week)\b/.test(q) && !person) {
+      list = ctx.attendance.filter((r) => r.date >= weekFrom && r.date <= weekTo);
+      label = "attendance this week";
+    }
+
+    if (/\blate\b/.test(q) && !person) {
+      list = list.filter((r) => r.clock_in && norm(r.clock_in_status) === "late");
+      label = label.replace(/^attendance/, "late attendance");
+    } else if (/\bpresent\b/.test(q) && !person) {
+      list = list.filter((r) => r.clock_in && norm(r.clock_in_status) !== "late");
+      label = label.replace(/^attendance/, "present");
+    } else if (/\babsent\b/.test(q) && !person) {
+      const onLeave = new Set(
+        ctx.leaves
+          .filter((l) => computeLeaveStatus(l) === "approved" && coversDate(l, today))
+          .map((l) => norm(l.user_name)),
+      );
+      const clocked = new Set(
+        ctx.attendance
+          .filter((r) => r.date === today && r.clock_in)
+          .map((r) => norm(r.user_name)),
+      );
+      const absentPeople = ctx.users.filter((u) => {
+        const key = norm(u.username);
+        return key && !clocked.has(key) && !onLeave.has(key);
+      });
+      const rows = absentPeople.map((u) => ({
+        Name: u.name || u.username,
+        Role: u.role || u.designation || "—",
+        Department: u.department || "—",
+        Status: "Absent",
+      }));
+      const tbl = table(
+        ["Name", "Role", "Department", "Status"],
+        rows,
+        "Nobody is marked absent today (or everyone clocked in / is on leave).",
+      );
+      return {
+        text: tbl.rows
+          ? `${absentPeople.length} absent today (no clock-in, not on leave).`
+          : tbl.text,
+        ...tbl,
+        chips: ["Present today", "Late today", "Who is on leave today?"],
+      };
+    }
+
+    if (person) {
+      const keys = [person.username, person.name].map(norm);
+      let fromDate = addDays(today, -60);
+      let toDate = today;
+      if (/\btoday\b/.test(q)) fromDate = today;
+      if (/\byesterday\b/.test(q)) {
+        fromDate = addDays(today, -1);
+        toDate = fromDate;
+      }
+      if (/\bweek\b/.test(q)) {
+        fromDate = weekFrom;
+        toDate = weekTo;
+      }
+      list = ctx.attendance
+        .filter(
+          (r) =>
+            (keys.includes(norm(r.user_name)) || keys.includes(norm(r.name))) &&
+            r.date >= fromDate &&
+            r.date <= toDate &&
+            r.clock_in,
+        )
+        .sort((a, b) => String(b.date).localeCompare(String(a.date)));
+
+      if (/\b(last|when|latest|recent)\b/.test(q) || /\bclock/.test(q)) {
+        const last = list[0];
+        if (last) {
+          highlight = `${person.name || person.username} last clocked in on ${prettyDate(last.date)} at ${fmtClock(last.clock_in)}${last.clock_out ? ` (out ${fmtClock(last.clock_out)})` : ""}.`;
+          list = list.slice(0, 10);
+        } else {
+          return {
+            text: `No clock-in records found for ${person.name || person.username} in the selected period.`,
+            chips: ["Present today", "Employee directory", "Who is on leave today?"],
+          };
+        }
+      } else {
+        list = list.slice(0, 15);
+      }
+      label = `attendance for ${person.name || person.username}`;
+    }
+
+    const tbl = table(
+      ["Name", "Date", "Status", "In", "Out"],
+      attendanceRows(list),
+      `No ${label}.`,
+    );
+    return {
+      text: highlight || (tbl.rows ? `${list.length} record${list.length === 1 ? "" : "s"} · ${label}.` : tbl.text),
+      ...tbl,
+      chips: ["Present today", "Late today", "Who is on leave today?"],
+    };
+  }
+
+  if (person) {
+    const keys = [person.username, person.name].map(norm);
+    const leave = ctx.leaves.filter(
+      (l) => keys.includes(norm(l.user_name)) || keys.includes(norm(l.name)),
+    );
+    const onLeave = leave.some(
+      (l) => computeLeaveStatus(l) === "approved" && coversDate(l, today),
+    );
+    const todayRec = ctx.attendance.find(
+      (r) => r.date === today && (keys.includes(norm(r.user_name)) || keys.includes(norm(r.name))),
+    );
+    const recent = ctx.attendance
+      .filter(
+        (r) =>
+          (keys.includes(norm(r.user_name)) || keys.includes(norm(r.name))) &&
+          r.clock_in,
+      )
+      .sort((a, b) => String(b.date).localeCompare(String(a.date)))
+      .slice(0, 10);
+    const last = recent[0];
+    const tbl = table(
+      ["Name", "Date", "Status", "In", "Out"],
+      attendanceRows(recent),
+      `${person.name || person.username} has no recent attendance rows.`,
+    );
+    return {
+      text: `${person.name || person.username} · ${person.role || person.designation || "employee"}${person.department ? ` · ${person.department}` : ""}. ${onLeave ? "On leave today. " : todayRec?.clock_in ? `Clocked in today (${attendanceStatus(todayRec)}) at ${fmtClock(todayRec.clock_in)}. ` : "No clock-in today. "}${last ? `Last clock-in: ${prettyDate(last.date)} at ${fmtClock(last.clock_in)}. ` : ""}${leave.filter((l) => computeLeaveStatus(l) === "pending").length} pending leave request(s).`,
+      ...tbl,
+      chips: DIP_HR_CHIPS,
+    };
+  }
+
+  return {
+    text: "I didn’t catch a specific HR report in that. Try employees, attendance, leave, expenses, or documents.",
+    chips: DIP_HR_CHIPS,
+  };
+}
+
+export async function answerDipQuery(rawText, user, options = {}) {
+  if (norm(options.scope) === "hr") {
+    return answerHrDipQuery(rawText, user);
+  }
+
   const text = String(rawText || "").trim();
   const q = norm(text);
   if (!q) return helpText(user?.name);
@@ -360,7 +822,7 @@ export async function answerDipQuery(rawText, user) {
     };
   }
 
-  if (/\b(employee|staff|people|directory|who works)\b/.test(q) && !/\bleave\b/.test(q) && !/\btask/.test(q)) {
+  if (/\b(employees?|staff|people|directory|who works)\b/.test(q) && !/\bleave\b/.test(q) && !/\btask/.test(q)) {
     let list = ctx.users;
     if (site) list = list.filter((u) => norm(u.site_name) === norm(site.site_name));
     const rows = list.map((u) => ({
@@ -473,13 +935,13 @@ export async function answerDipQuery(rawText, user) {
       leaveRows(list),
       `No ${label}.`,
     );
-    let text = tbl.rows
+    let outText = tbl.rows
       ? `${list.length} ${label}.`
       : tbl.text;
     if (/\btoday\b/.test(q) && pendingToday.length && !/\bpending\b/.test(q)) {
-      text += ` ${pendingToday.length} more request${pendingToday.length === 1 ? " is" : "s are"} pending for today.`;
+      outText += ` ${pendingToday.length} more request${pendingToday.length === 1 ? " is" : "s are"} pending for today.`;
     }
-    return { text, ...tbl, chips: ["Pending leave requests", "Who is on leave this week?"] };
+    return { text: outText, ...tbl, chips: ["Pending leave requests", "Who is on leave this week?"] };
   }
 
   if (

@@ -1,25 +1,80 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import { supabase } from "../supabase";
+import Navbar from "../components/Navbar";
 import PortalFloaters from "../components/PortalFloaters";
 import "./HRPortal.css";
 
 const MENU = [
-  { label: "Overview", icon: "grid", section: "Main" },
-  { label: "Employees", icon: "users", section: "Main" },
-  { label: "Attendance Register", icon: "calendar", section: "Main" },
-  { label: "Leave Records", icon: "leave", section: "HR Management" },
-  { label: "Leave Tracker", icon: "tracker", section: "HR Management" },
-  { label: "Expenses", icon: "money", section: "HR Management" },
-  { label: "Assets", icon: "briefcase", section: "Assets & More" },
-  { label: "Insurance", icon: "shield", section: "Assets & More" },
-  { label: "Documents", icon: "folder", section: "Assets & More" },
-  { label: "Birthdays", icon: "gift", section: "Assets & More" },
-  { label: "New Recruitment", icon: "user-plus", section: "Recruitment" },
-  { label: "Salary Slip", icon: "wallet", section: "Recruitment" },
+  { label: "Overview", icon: "grid", section: "Main", color: "#be3d3d" },
+  { label: "Employees", icon: "users", section: "Main", color: "#2563eb" },
+  { label: "Attendance Register", icon: "calendar", section: "Main", color: "#2563eb" },
+  { label: "Leave Records", icon: "leave", section: "HR Management", color: "#7c3aed" },
+  { label: "Leave Tracker", icon: "tracker", section: "HR Management", color: "#7c3aed" },
+  { label: "Expenses", icon: "money", section: "HR Management", color: "#d97706" },
+  { label: "Assets", icon: "briefcase", section: "Assets & More", color: "#0f766e" },
+  { label: "Insurance", icon: "shield", section: "Assets & More", color: "#0f766e" },
+  { label: "Documents", icon: "folder", section: "Assets & More", color: "#d97706" },
+  { label: "Birthdays", icon: "gift", section: "Assets & More", color: "#db2777" },
+  { label: "New Recruitment", icon: "user-plus", section: "Recruitment", color: "#ea580c" },
+  { label: "Salary Slip", icon: "wallet", section: "Recruitment", color: "#16a34a" },
 ];
 
+const MONTH_OPTIONS = [
+  { value: 1, label: "Jan" },
+  { value: 2, label: "Feb" },
+  { value: 3, label: "Mar" },
+  { value: 4, label: "Apr" },
+  { value: 5, label: "May" },
+  { value: 6, label: "Jun" },
+  { value: 7, label: "Jul" },
+  { value: 8, label: "Aug" },
+  { value: 9, label: "Sep" },
+  { value: 10, label: "Oct" },
+  { value: 11, label: "Nov" },
+  { value: 12, label: "Dec" },
+];
 
+const DAY_ABBR = ["SU", "MO", "TU", "WE", "TH", "FR", "SA"];
+
+function pad2(n) {
+  return String(n).padStart(2, "0");
+}
+
+function fmtAttTime(ts) {
+  if (!ts) return "";
+  try {
+    return new Date(ts).toLocaleTimeString("en-IN", {
+      timeZone: "Asia/Kolkata",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch {
+    return "";
+  }
+}
+
+function getMonthDays(year, month) {
+  const count = new Date(year, month, 0).getDate();
+  return Array.from({ length: count }, (_, index) => {
+    const day = index + 1;
+    const date = new Date(year, month - 1, day);
+    return {
+      day,
+      key: `${year}-${pad2(month)}-${pad2(day)}`,
+      weekday: DAY_ABBR[date.getDay()],
+      isWeekend: date.getDay() === 0 || date.getDay() === 6,
+    };
+  });
+}
+
+function statusForDay(record) {
+  if (!record?.clock_in) return "A";
+  if (String(record.clock_in_status || "").toLowerCase() === "late") return "L";
+  return "P";
+}
 function Icon({ name, size = 18 }) {
   const paths = {
     grid: (
@@ -112,6 +167,17 @@ function Icon({ name, size = 18 }) {
         <path d="M5 12h14M13 6l6 6-6 6" />
       </>
     ),
+    plus: (
+      <>
+        <path d="M12 5v14M5 12h14" />
+      </>
+    ),
+    close: (
+      <>
+        <line x1="18" y1="6" x2="6" y2="18" />
+        <line x1="6" y1="6" x2="18" y2="18" />
+      </>
+    ),
     "check-circle": (
       <>
         <circle cx="12" cy="12" r="9" />
@@ -128,6 +194,11 @@ function Icon({ name, size = 18 }) {
       <>
         <rect x="3" y="4" width="18" height="17" rx="2" />
         <path d="M16 2v4M8 2v4M3 10h18M9 15l4 4m0-4-4 4" />
+      </>
+    ),
+    download: (
+      <>
+        <path d="M12 3v12M7 10l5 5 5-5M5 21h14" />
       </>
     ),
   };
@@ -234,10 +305,12 @@ function statusForEmployee(employee, attendanceByUser, leaveUsernames) {
 }
 
 export default function HRPortal() {
-  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [activeItem, setActiveItem] = useState("Overview");
-  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(
+    () => (typeof window === "undefined" ? true : window.innerWidth > 760),
+  );
+  const [hoveredNavKey, setHoveredNavKey] = useState(null);
   const [search, setSearch] = useState("");
   const [overview, setOverview] = useState(null);
   const [overviewError, setOverviewError] = useState("");
@@ -254,6 +327,16 @@ export default function HRPortal() {
   const [leaveTrackerLoading, setLeaveTrackerLoading] = useState(false);
   const [leaveTrackerError, setLeaveTrackerError] = useState("");
   const [trackerYearStart, setTrackerYearStart] = useState(getFiscalYearStart());
+  const [registerYear, setRegisterYear] = useState(() => new Date().getFullYear());
+  const [registerMonth, setRegisterMonth] = useState(() => new Date().getMonth() + 1);
+  const [registerDays, setRegisterDays] = useState(() => {
+    const d = new Date();
+    return getMonthDays(d.getFullYear(), d.getMonth() + 1);
+  });
+  const [registerRows, setRegisterRows] = useState([]);
+  const [registerLoading, setRegisterLoading] = useState(false);
+  const [registerError, setRegisterError] = useState("");
+  const [registerLoaded, setRegisterLoaded] = useState(false);
 
   useEffect(() => setUser(getStoredUser()), []);
 
@@ -321,6 +404,235 @@ export default function HRPortal() {
       cancelled = true;
     };
   }, [user, activeItem, employeeStats]);
+
+  async function loadAttendanceRegister(year = registerYear, month = registerMonth) {
+    setRegisterLoading(true);
+    setRegisterError("");
+    const days = getMonthDays(year, month);
+    const from = days[0]?.key;
+    const to = days[days.length - 1]?.key;
+    setRegisterDays(days);
+
+    const [usersResult, attendanceResult] = await Promise.all([
+      supabase.from("user_details").select("username, name").order("name"),
+      supabase
+        .from("attendance")
+        .select("user_name, name, date, clock_in, clock_out, clock_in_status")
+        .gte("date", from)
+        .lte("date", to),
+    ]);
+
+    if (usersResult.error || attendanceResult.error) {
+      setRegisterError(
+        (usersResult.error || attendanceResult.error).message ||
+          "Could not load attendance register.",
+      );
+      setRegisterLoading(false);
+      return;
+    }
+
+    const byUser = new Map();
+    (usersResult.data || []).forEach((employee) => {
+      const username = employee.username;
+      const key = normalizeUsername(username);
+      if (!key) return;
+      byUser.set(key, {
+        username,
+        name: employee.name || username || "Unnamed employee",
+        days: {},
+        present: 0,
+        late: 0,
+        absent: 0,
+      });
+    });
+
+    (attendanceResult.data || []).forEach((row) => {
+      const key = normalizeUsername(row.user_name);
+      if (!key || !row.date) return;
+      if (!byUser.has(key)) {
+        byUser.set(key, {
+          username: row.user_name,
+          name: row.name || row.user_name || "Unnamed employee",
+          days: {},
+          present: 0,
+          late: 0,
+          absent: 0,
+        });
+      }
+      const bucket = byUser.get(key);
+      if (!bucket.name && row.name) bucket.name = row.name;
+      bucket.days[row.date] = {
+        status: statusForDay(row),
+        clockIn: fmtAttTime(row.clock_in),
+        clockOut: fmtAttTime(row.clock_out),
+        clockInRaw: row.clock_in,
+        clockOutRaw: row.clock_out,
+      };
+    });
+
+    const rows = [...byUser.values()]
+      .map((employee) => {
+        let present = 0;
+        let late = 0;
+        let absent = 0;
+        days.forEach((day) => {
+          const cell = employee.days[day.key];
+          const status = cell?.status || "A";
+          if (status === "P") present += 1;
+          else if (status === "L") late += 1;
+          else absent += 1;
+          if (!cell) {
+            employee.days[day.key] = {
+              status: "A",
+              clockIn: "",
+              clockOut: "",
+            };
+          }
+        });
+        return { ...employee, present, late, absent };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    setRegisterRows(rows);
+    setRegisterLoaded(true);
+    setRegisterLoading(false);
+  }
+
+  function downloadRegisterPdf() {
+    if (!registerRows.length || !registerDays.length) return;
+    const monthLabel =
+      MONTH_OPTIONS.find((m) => m.value === registerMonth)?.label || registerMonth;
+    const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a3" });
+    doc.setFontSize(14);
+    doc.setTextColor(30, 41, 59);
+    doc.text(`Attendance Register — ${monthLabel} ${registerYear}`, 40, 36);
+
+    const dayCount = registerDays.length;
+    const head = [
+      [
+        "Employee",
+        ...registerDays.map((d) => `${d.day}\n${d.weekday}`),
+        "P",
+        "L",
+        "A",
+      ],
+    ];
+    const body = registerRows.map((row) => [
+      row.name,
+      ...registerDays.map((day) => {
+        const cell = row.days[day.key] || { status: "A" };
+        const lines = [cell.status || "A"];
+        if (cell.clockIn) lines.push(`In ${cell.clockIn}`);
+        if (cell.clockOut) lines.push(`Out ${cell.clockOut}`);
+        return lines.join("\n");
+      }),
+      String(row.present),
+      String(row.late),
+      String(row.absent),
+    ]);
+
+    const statusStyles = {
+      P: { fillColor: [219, 234, 254], textColor: [29, 78, 216] },
+      L: { fillColor: [254, 243, 199], textColor: [180, 83, 9] },
+      A: { fillColor: [254, 226, 226], textColor: [185, 28, 28] },
+    };
+
+    const dayColWidth = Math.max(28, Math.min(42, (780 - 100) / Math.max(dayCount, 1)));
+
+    autoTable(doc, {
+      head,
+      body,
+      startY: 48,
+      styles: {
+        fontSize: 5.5,
+        cellPadding: 1.5,
+        halign: "center",
+        valign: "middle",
+        lineColor: [203, 213, 225],
+        lineWidth: 0.3,
+        overflow: "linebreak",
+        minCellHeight: 22,
+      },
+      headStyles: {
+        fillColor: [203, 213, 225],
+        textColor: [15, 23, 42],
+        fontSize: 5.5,
+        fontStyle: "bold",
+        minCellHeight: 16,
+      },
+      columnStyles: {
+        0: {
+          halign: "left",
+          cellWidth: 88,
+          fillColor: [226, 232, 240],
+          textColor: [15, 23, 42],
+          fontSize: 5.5,
+        },
+        ...Object.fromEntries(
+          registerDays.map((_, index) => [
+            index + 1,
+            { cellWidth: dayColWidth, fontSize: 5 },
+          ]),
+        ),
+        [dayCount + 1]: { cellWidth: 18, fontStyle: "bold" },
+        [dayCount + 2]: { cellWidth: 18, fontStyle: "bold" },
+        [dayCount + 3]: { cellWidth: 18, fontStyle: "bold" },
+      },
+      didParseCell(data) {
+        const col = data.column.index;
+        if (data.section === "head") {
+          if (col === dayCount + 1) {
+            data.cell.styles.fillColor = [22, 163, 74];
+          } else if (col === dayCount + 2) {
+            data.cell.styles.fillColor = [217, 119, 6];
+          } else if (col === dayCount + 3) {
+            data.cell.styles.fillColor = [220, 38, 38];
+          } else if (col > 0 && col <= dayCount) {
+            const day = registerDays[col - 1];
+            if (day?.isWeekend) {
+              data.cell.styles.fillColor = [196, 181, 253];
+              data.cell.styles.textColor = [76, 29, 149];
+            } else {
+              data.cell.styles.fillColor = [191, 219, 254];
+              data.cell.styles.textColor = [30, 58, 138];
+            }
+          }
+          return;
+        }
+
+        if (data.section !== "body") return;
+
+        if (col > 0 && col <= dayCount) {
+          const day = registerDays[col - 1];
+          const row = registerRows[data.row.index];
+          const status = row?.days?.[day.key]?.status || "A";
+          const style = statusStyles[status] || statusStyles.A;
+          data.cell.styles.fillColor = style.fillColor;
+          data.cell.styles.textColor = style.textColor;
+          data.cell.styles.fontStyle = "bold";
+        } else if (col === dayCount + 1) {
+          data.cell.styles.fillColor = [240, 253, 244];
+          data.cell.styles.textColor = [22, 163, 74];
+          data.cell.styles.fontStyle = "bold";
+        } else if (col === dayCount + 2) {
+          data.cell.styles.fillColor = [255, 251, 235];
+          data.cell.styles.textColor = [217, 119, 6];
+          data.cell.styles.fontStyle = "bold";
+        } else if (col === dayCount + 3) {
+          data.cell.styles.fillColor = [254, 242, 242];
+          data.cell.styles.textColor = [220, 38, 38];
+          data.cell.styles.fontStyle = "bold";
+        }
+      },
+    });
+    doc.save(`attendance-register-${registerYear}-${pad2(registerMonth)}.pdf`);
+  }
+
+  useEffect(() => {
+    if (!user || activeItem !== "Attendance Register" || registerLoaded) return;
+    loadAttendanceRegister();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, activeItem, registerLoaded]);
 
   useEffect(() => {
     if (!user || activeItem !== "Leave Records") return;
@@ -470,12 +782,9 @@ export default function HRPortal() {
   }, [user]);
 
   const firstName = user?.name?.split(" ")[0] || "there";
-  const initials = (user?.name || "HR")
-    .split(" ")
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
+  const hour = new Date().getHours();
+  const greeting =
+    hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
   const today = new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
     month: "short",
@@ -491,7 +800,9 @@ export default function HRPortal() {
   const attendanceDays = overview?.attendanceDays || [];
   const selectItem = (label) => {
     setActiveItem(label);
-    setSidebarOpen(false);
+    if (typeof window !== "undefined" && window.innerWidth <= 760) {
+      setSidebarOpen(false);
+    }
   };
 
   const employeeList = (overview?.users || []).filter((employee) => {
@@ -535,6 +846,14 @@ export default function HRPortal() {
     .filter((row) => !leaveSearch.trim() || row.name.toLowerCase().includes(leaveSearch.trim().toLowerCase()) || String(row.username || "").toLowerCase().includes(leaveSearch.trim().toLowerCase()))
     .sort((a, b) => a.name.localeCompare(b.name));
 
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth > 760) setSidebarOpen(true);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   if (!user)
     return (
       <div className="hr-loading">
@@ -544,103 +863,80 @@ export default function HRPortal() {
     );
 
   return (
-    <div className="hr-portal">
-      <aside className={`hr-sidebar${sidebarOpen ? " is-open" : ""}`}>
-        <div className="hr-brand">
-          <div className="hr-brand-mark">
-            <span />
-            <span />
-            <span />
-          </div>
-          <div>
-            <strong>HR Portal</strong>
-            <small>People & operations</small>
-          </div>
-        </div>
-        <div className="hr-date">{today}</div>
-        <nav className="hr-nav" aria-label="HR portal navigation">
-          {MENU.map((item, index) => (
-            <div key={item.label}>
-              {(index === 0 || item.section !== MENU[index - 1].section) && (
-                <div className="hr-nav-section">{item.section}</div>
-              )}
-              <button
-                className={`hr-nav-item${activeItem === item.label ? " is-active" : ""}`}
-                onClick={() => selectItem(item.label)}
-              >
-                <Icon name={item.icon} size={17} />
-                <span>{item.label}</span>
-                {item.label === "Leave Records" && (
-                  <b className="hr-nav-count">4</b>
-                )}
-              </button>
-            </div>
-          ))}
-        </nav>
-        <div className="hr-sidebar-footer">
-          <div className="hr-sidebar-note">
-            <span className="hr-status-pulse" />
-            All systems operational
-          </div>
+    <div className="hr-root">
+      <Navbar
+        onMenuToggle={() => setSidebarOpen((open) => !open)}
+        menuOpen={sidebarOpen}
+      />
+      <div className="hr-body">
+        {sidebarOpen && (
           <button
-            className="hr-signout"
-            onClick={() => {
-              localStorage.removeItem("user");
-              navigate("/");
-            }}
-          >
-            <Icon name="arrow" size={16} /> Sign out
-          </button>
-        </div>
-      </aside>
-      {sidebarOpen && (
-        <button
-          className="hr-backdrop"
-          aria-label="Close navigation"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-      <main className="hr-main">
-        <header className="hr-topbar">
-          <button
-            className="hr-menu-toggle"
-            aria-label="Open navigation"
-            onClick={() => setSidebarOpen(true)}
-          >
-            <span />
-            <span />
-            <span />
-          </button>
-          <div className="hr-breadcrumb">
-            <span>Workspace</span>
-            <b>/</b>
-            <strong>{activeItem}</strong>
-          </div>
-          <div className="hr-top-actions">
-            <label className="hr-search">
-              <Icon name="search" size={17} />
-              <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Search anything"
-                aria-label="Search anything"
-              />
-            </label>
-            <button className="hr-icon-button" aria-label="Notifications">
-              <Icon name="bell" size={18} />
-              <i />
+            className="hr-sidebar-backdrop"
+            aria-label="Close sidebar"
+            onClick={() => setSidebarOpen(false)}
+          />
+        )}
+        <aside className={`hr-sidebar${sidebarOpen ? "" : " collapsed"}`}>
+          <div className="hr-sidebar-header">
+            <button
+              className="hr-sidebar-close"
+              aria-label="Close sidebar"
+              onClick={() => setSidebarOpen(false)}
+            >
+              <Icon name="close" size={16} />
             </button>
-            <div className="hr-user-chip">
-              <div className="hr-avatar">{initials}</div>
-              <div>
-                <strong>{user.name || "HR Admin"}</strong>
-                <small>{user.role || "HR Manager"}</small>
-              </div>
-              <span className="hr-chevron">⌄</span>
+          </div>
+          <nav className="hr-nav" aria-label="HR portal navigation">
+            {MENU.map((item, index) => {
+              const showSection =
+                index === 0 || item.section !== MENU[index - 1].section;
+              const isActive = activeItem === item.label;
+              const isHovered = hoveredNavKey === item.label;
+              const highlighted = isActive || isHovered;
+              return (
+                <div key={item.label}>
+                  {showSection && (
+                    <div className="hr-nav-section">{item.section}</div>
+                  )}
+                  <button
+                    className={`hr-nav-item${isActive ? " active" : ""}`}
+                    onClick={() => selectItem(item.label)}
+                    onMouseEnter={() => setHoveredNavKey(item.label)}
+                    onMouseLeave={() => setHoveredNavKey(null)}
+                    style={{
+                      background: highlighted ? `${item.color}18` : undefined,
+                      color: highlighted ? item.color : undefined,
+                    }}
+                  >
+                    <span className="hr-nav-icon" style={{ color: item.color }}>
+                      <Icon name={item.icon} size={17} />
+                    </span>
+                    {item.label}
+                    {item.label === "Leave Records" && pendingLeaves.length > 0 && (
+                      <span className="hr-nav-badge">{pendingLeaves.length}</span>
+                    )}
+                  </button>
+                </div>
+              );
+            })}
+          </nav>
+        </aside>
+        <main className="hr-main">
+          <div className="hr-page-header">
+            <div className="hr-page-title-row">
+              <h1 className="hr-page-title">{activeItem}</h1>
+              <label className="hr-search">
+                <Icon name="search" size={16} />
+                <input
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Search employees, leave…"
+                  aria-label="Search"
+                />
+              </label>
             </div>
           </div>
-        </header>
-        <section className="hr-content">
+          <section className="hr-content">
           {overviewError && (
             <div className="hr-data-alert">
               Could not load live HR data: {overviewError}
@@ -650,11 +946,10 @@ export default function HRPortal() {
             <>
               <div className="hr-welcome-row">
                 <div>
-                  <p className="hr-kicker">Monday, {today}</p>
-                  <h1>
-                    Good morning, {firstName}
-                    <span>.</span>
-                  </h1>
+                  <p className="hr-kicker">{today}</p>
+                  <h2>
+                    {greeting}, {firstName}
+                  </h2>
                   <p className="hr-subtitle">
                     Here is what is happening across your people operations
                     today.
@@ -664,7 +959,7 @@ export default function HRPortal() {
                   className="hr-primary-button"
                   onClick={() => selectItem("New Recruitment")}
                 >
-                  <span>+</span> Add employee
+                  <Icon name="plus" size={16} /> Add employee
                 </button>
               </div>
               <div className="hr-stat-grid">
@@ -941,7 +1236,7 @@ export default function HRPortal() {
                 <div className="hr-welcome-row">
                   <div>
                     <p className="hr-kicker">People directory</p>
-                    <h1>Employees<span>.</span></h1>
+                    <h2>Employees</h2>
                     <p className="hr-subtitle">{overview ? `${employeeList.length} of ${overview.users.length} employees` : "Loading employee records..."}</p>
                   </div>
                 </div>
@@ -967,12 +1262,165 @@ export default function HRPortal() {
                   {overview && !employeeList.length && <div className="hr-list-empty">No employees found</div>}
                 </div>
               </>
+            ) : activeItem === "Attendance Register" ? (
+              <>
+                <div className="hr-att-toolbar">
+                  <div className="hr-att-title">
+                    <Icon name="calendar" size={18} />
+                    <strong>Attendance Register</strong>
+                  </div>
+                  <div className="hr-att-filters">
+                    <label>
+                      <span>Year</span>
+                      <select
+                        value={registerYear}
+                        onChange={(event) => setRegisterYear(Number(event.target.value))}
+                        aria-label="Attendance year"
+                      >
+                        {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - 2 + i).map(
+                          (year) => (
+                            <option key={year} value={year}>
+                              {year}
+                            </option>
+                          ),
+                        )}
+                      </select>
+                    </label>
+                    <label>
+                      <span>Month</span>
+                      <select
+                        value={registerMonth}
+                        onChange={(event) => setRegisterMonth(Number(event.target.value))}
+                        aria-label="Attendance month"
+                      >
+                        {MONTH_OPTIONS.map((month) => (
+                          <option key={month.value} value={month.value}>
+                            {month.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      className="hr-primary-button"
+                      type="button"
+                      disabled={registerLoading}
+                      onClick={() => loadAttendanceRegister(registerYear, registerMonth)}
+                    >
+                      Show
+                    </button>
+                    <button
+                      className="hr-quiet-button"
+                      type="button"
+                      disabled={!registerRows.length || registerLoading}
+                      onClick={downloadRegisterPdf}
+                    >
+                      <Icon name="download" size={15} /> Download PDF
+                    </button>
+                  </div>
+                </div>
+
+                {registerError && (
+                  <div className="hr-data-alert">{registerError}</div>
+                )}
+
+                <div className="hr-att-wrap">
+                  <table className="hr-att-table">
+                    <thead>
+                      <tr>
+                        <th className="hr-att-emp-head">Employee</th>
+                        {registerDays.map((day) => (
+                          <th
+                            key={day.key}
+                            className={`hr-att-day-head${day.isWeekend ? " is-weekend" : ""}`}
+                          >
+                            <strong>{day.day}</strong>
+                            <small>{day.weekday}</small>
+                          </th>
+                        ))}
+                        <th className="hr-att-sum-head is-p">P</th>
+                        <th className="hr-att-sum-head is-l">L</th>
+                        <th className="hr-att-sum-head is-a">A</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {registerRows.map((row) => (
+                        <tr key={row.username || row.name}>
+                          <td className="hr-att-emp">{row.name}</td>
+                          {registerDays.map((day) => {
+                            const cell = row.days[day.key] || { status: "A" };
+                            const status = cell.status || "A";
+                            return (
+                              <td
+                                key={`${row.username}-${day.key}`}
+                                className={`hr-att-cell status-${status.toLowerCase()}${day.isWeekend ? " is-weekend" : ""}`}
+                              >
+                                <span className={`hr-att-badge status-${status.toLowerCase()}`}>
+                                  {status}
+                                </span>
+                                {cell.clockIn ? (
+                                  <span className="hr-att-time is-in">
+                                    <svg width="8" height="8" viewBox="0 0 24 24" aria-hidden="true">
+                                      <path d="M12 4l8 14H4z" fill="#16a34a" />
+                                    </svg>
+                                    {cell.clockIn}
+                                  </span>
+                                ) : null}
+                                {cell.clockOut ? (
+                                  <span className="hr-att-time is-out">
+                                    <svg width="8" height="8" viewBox="0 0 24 24" aria-hidden="true">
+                                      <path d="M12 20L4 6h16z" fill="#dc2626" />
+                                    </svg>
+                                    {cell.clockOut}
+                                  </span>
+                                ) : null}
+                              </td>
+                            );
+                          })}
+                          <td className="hr-att-sum is-p">{row.present}</td>
+                          <td className="hr-att-sum is-l">{row.late}</td>
+                          <td className="hr-att-sum is-a">{row.absent}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {registerLoading && (
+                    <div className="hr-list-empty">Loading attendance…</div>
+                  )}
+                  {!registerLoading && registerLoaded && !registerRows.length && (
+                    <div className="hr-list-empty">No employees found for this month.</div>
+                  )}
+                </div>
+
+                <div className="hr-att-legend">
+                  <span className="hr-att-leg">
+                    <i className="dot p" /> P = Present
+                  </span>
+                  <span className="hr-att-leg">
+                    <i className="dot l" /> L = Late
+                  </span>
+                  <span className="hr-att-leg">
+                    <i className="dot a" /> A = Absent
+                  </span>
+                  <span className="hr-att-leg">
+                    <svg width="9" height="9" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 4l8 14H4z" fill="#16a34a" />
+                    </svg>
+                    In
+                  </span>
+                  <span className="hr-att-leg">
+                    <svg width="9" height="9" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M12 20L4 6h16z" fill="#dc2626" />
+                    </svg>
+                    Out (24hr)
+                  </span>
+                </div>
+              </>
             ) : activeItem === "Leave Records" ? (
               <>
                 <div className="hr-welcome-row">
                   <div>
                     <p className="hr-kicker">HR management</p>
-                    <h1>Leave records<span>.</span></h1>
+                    <h2>Leave records</h2>
                     <p className="hr-subtitle">Review every leave application and its final status.</p>
                   </div>
                 </div>
@@ -1007,8 +1455,8 @@ export default function HRPortal() {
                           <td>
                             <span
                               style={{
-                                color: "#6B21A8",
-                                backgroundColor: "#F3E8FF",
+                                color: "#1d4ed8",
+                                backgroundColor: "#eff6ff",
                                 borderRadius: "999px",
                                 padding: "4px 12px",
                                 display: "inline-block",
@@ -1036,7 +1484,7 @@ export default function HRPortal() {
               <div className="hr-welcome-row hr-tracker-heading">
                 <div>
                   <p className="hr-kicker">HR management</p>
-                  <h1>Leave tracker<span>.</span></h1>
+                  <h2>Leave tracker</h2>
                   <p className="hr-subtitle">Annual leave usage across the April to March cycle.</p>
                 </div>
                 <button className="hr-primary-button" onClick={() => selectItem("Leave Records")}><Icon name="calendar" size={16} /> View leave records</button>
@@ -1084,8 +1532,9 @@ export default function HRPortal() {
             </div>
           )}
         </section>
-      </main>
-      <PortalFloaters />
+        </main>
+      </div>
+      <PortalFloaters showBot botScope="hr" />
     </div>
   );
 }

@@ -12434,7 +12434,7 @@ case "all-drawings":
           </main>
         </div>
         {/* FAB — dashboard and all-tasks tabs */}
-        <PortalFloaters />
+        <PortalFloaters showBot />
         {(activeTab === "dashboard" || activeTab === "all-tasks") && (
           <button
             className="ap-fab"

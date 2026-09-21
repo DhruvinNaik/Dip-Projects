@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Navbar from "../components/Navbar";
+import PortalFloaters from "../components/PortalFloaters";
 
 export default function ProjectHeadPortal() {
 
@@ -104,6 +105,8 @@ export default function ProjectHeadPortal() {
         </div>
 
       </div>
+
+      <PortalFloaters showBot />
 
     </div>
   );

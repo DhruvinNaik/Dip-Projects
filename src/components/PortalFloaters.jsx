@@ -1933,7 +1933,7 @@ function ChatPanel({
   );
 }
 
-export default function PortalFloaters() {
+export default function PortalFloaters({ showBot = false }) {
   const user = getStoredUser();
   const me = user?.user_name || user?.username;
   const [open, setOpen] = useState(null);
@@ -2077,7 +2077,7 @@ export default function PortalFloaters() {
           onClick={() => setOpen(null)}
         />
       )}
-      {open === "bot" && (
+      {showBot && open === "bot" && (
         <DipPanel user={user} onClose={() => setOpen(null)} />
       )}
       {open === "chat" && (
@@ -2091,14 +2091,16 @@ export default function PortalFloaters() {
         />
       )}
       <div className="pf-stack">
-        <button
-          className={`pf-fab pf-fab-dip${open === "bot" ? " is-open" : ""}`}
-          onClick={() => setOpen((v) => (v === "bot" ? null : "bot"))}
-          title="DIP Bot"
-          aria-label="DIP Bot"
-        >
-          <Ico name="bot" />
-        </button>
+        {showBot && (
+          <button
+            className={`pf-fab pf-fab-dip${open === "bot" ? " is-open" : ""}`}
+            onClick={() => setOpen((v) => (v === "bot" ? null : "bot"))}
+            title="DIP Bot"
+            aria-label="DIP Bot"
+          >
+            <Ico name="bot" />
+          </button>
+        )}
         <button
           className={`pf-fab pf-fab-chat${open === "chat" ? " is-open" : ""}`}
           onClick={() => setOpen((v) => (v === "chat" ? null : "chat"))}

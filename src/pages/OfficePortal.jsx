@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Navbar from "../components/Navbar";
+import PortalFloaters from "../components/PortalFloaters";
 import { supabase } from "../supabase";
 import SiteReport from "./Sitereport";
 import Checklists from "./Checklists";
@@ -33,6 +34,18 @@ const TASK_NAV = [
       </svg>
     ),
   },
+    {
+      key: "all-tasks",
+      label: "Tasks History",
+      icon: (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M4 5h16M4 12h16M4 19h16" />
+          <circle cx="7" cy="5" r="1" fill="#2563eb" />
+          <circle cx="7" cy="12" r="1" fill="#2563eb" />
+          <circle cx="7" cy="19" r="1" fill="#2563eb" />
+        </svg>
+      ),
+    },
   {
     key: "my-reschedules",
     label: "My Reschedule Requests",
@@ -900,9 +913,13 @@ function TaskActionMenu({
   onReschedule,
   onSendVerification,
   onRaiseTicket,
-  recurringMode = false,   // ← add
-  onDone,                  // ← add
-  onNotApplicable,         // ← add
+  recurringMode = false,
+  onDone,
+  onNotApplicable,
+  hasPendingVerification = false,
+  hasPendingReschedule = false,
+  hasOpenTicket = false,
+  onRejectTask,   // ← add
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState({ top: 0, left: 0 });
@@ -995,34 +1012,61 @@ function TaskActionMenu({
   // Not yet accepted — standalone Accept button, no dropdown
   if (!isAccepted && !isCompleted) {
     return (
-      <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onAccept(task);
-        }}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          fontSize: 12,
-          fontWeight: 700,
-          padding: "6px 14px",
-          borderRadius: 7,
-          border: "1px solid #bbf7d0",
-          background: "#f0fdf4",
-          color: "#16a34a",
-          cursor: "pointer",
-          whiteSpace: "nowrap",
-        }}
-        onMouseEnter={(e) => (e.currentTarget.style.background = "#dcfce7")}
-        onMouseLeave={(e) => (e.currentTarget.style.background = "#f0fdf4")}
-      >
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="12" cy="12" r="10" />
-          <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
-        </svg>
-        Accept Task
-      </button>
+      <div style={{ display: "flex", gap: 6 }} onClick={(e) => e.stopPropagation()}>
+        <button
+          onClick={() => onAccept(task)}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "6px 14px",
+            borderRadius: 7,
+            border: "1px solid #bbf7d0",
+            background: "#f0fdf4",
+            color: "#16a34a",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#dcfce7")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#f0fdf4")}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" />
+            <polygon points="10 8 16 12 10 16 10 8" fill="currentColor" stroke="none" />
+          </svg>
+          Accept Task
+        </button>
+        <button
+          onClick={() => {
+            console.log("Reject clicked, onRejectTask is:", onRejectTask);
+            onRejectTask?.(task);
+          }}
+          style={{
+            display: "inline-flex",
+            alignItems: "center",
+            gap: 6,
+            fontSize: 12,
+            fontWeight: 700,
+            padding: "6px 12px",
+            borderRadius: 7,
+            border: "1px solid #fecaca",
+            background: "#fef2f2",
+            color: "#dc2626",
+            cursor: "pointer",
+            whiteSpace: "nowrap",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.background = "#fee2e2")}
+          onMouseLeave={(e) => (e.currentTarget.style.background = "#fef2f2")}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+          Reject
+        </button>
+      </div>
     );
   }
 
@@ -1039,65 +1083,72 @@ function TaskActionMenu({
   };
 
   const items = [
-    {
-      key: "verify",
-      label: "Send for Verification",
-      color: "#16a34a",
-      bg: "#f0fdf4",
-      onClick: () => onSendVerification(task),
-      icon: (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 11l3 3L22 4" />
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-        </svg>
-      ),
-    },
-    {
-      key: "hold",
-      label: isHeld ? "Continue Task" : "Hold Task",
-      color: isHeld ? "#2563eb" : "#d97706",
-      bg: isHeld ? "#eff6ff" : "#fffbeb",
-      onClick: () => (isHeld ? onContinue(task) : onHold(task)),
-      icon: isHeld ? (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polygon points="5 3 19 12 5 21 5 3" />
-        </svg>
-      ) : (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="6" y="4" width="4" height="16" />
-          <rect x="14" y="4" width="4" height="16" />
-        </svg>
-      ),
-    },
-    {
-      key: "reschedule",
-      label: "Reschedule",
-      disabled: !canReschedule,
-      color: "#7c3aed",
-      bg: "#f5f3ff",
-      onClick: () => canReschedule && onReschedule(task),
-      icon: (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-          <path d="M3 3v5h5" />
-        </svg>
-      ),
-    },
-    {
-      key: "ticket",
-      label: "Raise Ticket",
-      color: "#dc2626",
-      bg: "#fef2f2",
-      onClick: () => onRaiseTicket(task),
-      icon: (
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
-          <line x1="12" y1="10" x2="12" y2="14" />
-          <line x1="12" y1="17" x2="12.01" y2="17" />
-        </svg>
-      ),
-    },
-  ];
+  {
+    key: "verify",
+    label: hasPendingVerification ? "Verification Sent" : "Send for Verification",
+    disabled: hasPendingVerification,
+    disabledReason: "Already sent — waiting on admin review",
+    color: "#16a34a",
+    bg: "#f0fdf4",
+    onClick: () => !hasPendingVerification && onSendVerification(task),
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+      </svg>
+    ),
+  },
+  {
+    key: "hold",
+    label: isHeld ? "Continue Task" : "Hold Task",
+    color: isHeld ? "#2563eb" : "#d97706",
+    bg: isHeld ? "#eff6ff" : "#fffbeb",
+    onClick: () => (isHeld ? onContinue(task) : onHold(task)),
+    icon: isHeld ? (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <polygon points="5 3 19 12 5 21 5 3" />
+      </svg>
+    ) : (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="6" y="4" width="4" height="16" />
+        <rect x="14" y="4" width="4" height="16" />
+      </svg>
+    ),
+  },
+  {
+    key: "reschedule",
+    label: hasPendingReschedule ? "Reschedule Requested" : "Reschedule",
+    disabled: !canReschedule || hasPendingReschedule,
+    disabledReason: hasPendingReschedule
+      ? "Already requested — waiting on approval"
+      : "Reschedule not enabled for this task",
+    color: "#7c3aed",
+    bg: "#f5f3ff",
+    onClick: () => canReschedule && !hasPendingReschedule && onReschedule(task),
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+        <path d="M3 3v5h5" />
+      </svg>
+    ),
+  },
+  {
+    key: "ticket",
+    label: hasOpenTicket ? "Ticket Raised" : "Raise Ticket",
+    disabled: hasOpenTicket,
+    disabledReason: "You already have an open ticket for this task",
+    color: "#dc2626",
+    bg: "#fef2f2",
+    onClick: () => !hasOpenTicket && onRaiseTicket(task),
+    icon: (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+        <line x1="12" y1="10" x2="12" y2="14" />
+        <line x1="12" y1="17" x2="12.01" y2="17" />
+      </svg>
+    ),
+  },
+];
 
 
   return (
@@ -1152,16 +1203,17 @@ function TaskActionMenu({
             const hovered = hoveredKey === item.key && !item.disabled;
             return (
               <button
-                key={item.key}
-                disabled={item.disabled}
-                onMouseEnter={() => setHoveredKey(item.key)}
-                onMouseLeave={() => setHoveredKey(null)}
-                onClick={() => {
-                  if (item.disabled) return;
-                  setMenuOpen(false);
-                  item.onClick();
-                }}
-                style={{
+                  key={item.key}
+                  disabled={item.disabled}
+                  title={item.disabled ? item.disabledReason : undefined}   // ← add
+                  onMouseEnter={() => setHoveredKey(item.key)}
+                  onMouseLeave={() => setHoveredKey(null)}
+                  onClick={() => {
+                    if (item.disabled) return;
+                    setMenuOpen(false);
+                    item.onClick();
+                  }}
+                  style={{
                   display: "flex",
                   alignItems: "center",
                   gap: 9,
@@ -1190,7 +1242,20 @@ function TaskActionMenu({
     </div>
   );
 }
-
+function getActivityBadge(task, maps) {
+  if (!maps) return null;
+  const { verificationMap, rescheduleMap, ticketMap } = maps;
+  if (verificationMap?.has(task.id)) {
+    return { label: "Sent for Verification", bg: "#eff6ff", color: "#2563eb" };
+  }
+  if (rescheduleMap?.has(task.id)) {
+    return { label: "Reschedule Requested", bg: "#f5f3ff", color: "#7c3aed" };
+  }
+  if (ticketMap?.has(task.id)) {
+    return { label: "Ticket Raised", bg: "#fff7ed", color: "#ea580c" };
+  }
+  return null;
+}
 // ── Task Table ─────────────────────────────────────────────────────────────
 function TaskTable({
   tasks,
@@ -1208,7 +1273,9 @@ function TaskTable({
   onContinue,
   recurringMode = false,
   onDone,               
-  onNotApplicable,      
+  onNotApplicable,   
+  activityMaps,     
+  onRejectTask,
 }) {
   const nameFor = (username) => userMap[username] || username || "—";
 
@@ -1234,6 +1301,7 @@ function TaskTable({
           {tasks.map((task) => {
             const p = PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium;
             const s = STATUS_STYLES[task.status] || STATUS_STYLES.pending;
+            const activity = getActivityBadge(task, activityMaps);
             return (
               <tr key={task.id} className="tt-row" onClick={() => onClick?.(task)}>
                 <td className="tt-title-cell">
@@ -1259,8 +1327,16 @@ function TaskTable({
                 )}
                 {!recurringMode && (
                   <td>
-                    <span className="op-badge" style={{ background: s.bg, color: s.color }}>
-                      {task.status?.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                    <span
+                      className="op-badge"
+                      style={{
+                        background: activity ? activity.bg : s.bg,
+                        color: activity ? activity.color : s.color,
+                      }}
+                    >
+                      {activity
+                        ? activity.label
+                        : task.status?.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase())}
                     </span>
                   </td>
                 )}
@@ -1315,6 +1391,10 @@ function TaskTable({
                     recurringMode={recurringMode}
                     onDone={onDone}
                     onNotApplicable={onNotApplicable}
+                    hasPendingVerification={!!activityMaps?.verificationMap?.has(task.id)}
+                    hasPendingReschedule={!!activityMaps?.rescheduleMap?.has(task.id)}
+                    hasOpenTicket={!!activityMaps?.ticketMap?.has(task.id)}
+                    onRejectTask={onRejectTask}
                   />
                 </td>
               </tr>
@@ -1325,6 +1405,128 @@ function TaskTable({
     </div>
   );
 } 
+
+function TaskHistoryTable({
+  tasks,
+  onDetailClick,
+  onReschedule,
+  onSendVerification,
+  onRaiseTicket,
+  onAccept,
+  onHold,
+  onContinue,
+}) {
+  const fmtDate = (date) =>
+    date
+      ? new Date(date).toLocaleDateString("en-IN", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        })
+      : "—";
+  const STOPPED_STATUSES = ["completed", "not_applicable"];
+  const formatHours = (task) => {
+    let seconds = Number(task.accumulated_seconds) || 0;
+    // Only keep the live clock running while the task is actually
+    // active — accepted, not held, and not in a terminal status.
+    if (task.accepted_at && !task.is_held && !STOPPED_STATUSES.includes(task.status)) {
+      seconds += Math.max(0, Math.floor((Date.now() - new Date(task.resumed_at || task.accepted_at)) / 1000));
+    }
+    if (seconds <= 0) return "—";
+    if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
+    return `${(seconds / 3600).toFixed(2)} hrs`;
+  };
+  const statusFor = (task) => {
+    if (task.status === "completed") return "completed";
+    if (task.status === "not_applicable") return "not applicable";
+    if (task.accepted_at) return task.is_held ? "on hold" : "working";
+    return task.status || "pending";
+  };
+  const statusLabel = (status) =>
+    status.replace("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
+
+  return (
+    <div className="tt-wrap">
+      <table className="tt-table">
+        <thead>
+          <tr>
+            <th>Title</th>
+            <th>Site</th>
+            <th>Priority</th>
+            <th>Planned Hrs</th>
+            <th>Due Date</th>
+            <th>Hrs Taken</th>
+            <th>Completed Date</th>
+            <th>Status</th>
+            <th>File</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {tasks.map((task) => {
+            const priority = PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium;
+            const status = statusFor(task);
+            const statusStyle = STATUS_STYLES[task.status] || STATUS_STYLES.pending;
+            const completedDate = task.completed_at || task.completed_date || task.completion_date || (task.status === "completed" ? task.updated_at : null);
+            const isPending = task.status === "pending" && !task.accepted_at;
+            return (
+              <tr key={task.id} className="tt-row" onClick={() => onDetailClick?.(task)}>
+                <td className="tt-title-cell">
+                  <div className="tt-title">{task.title}</div>
+                  {task.description && <div className="tt-desc">{task.description}</div>}
+                </td>
+                <td>{task.site_name || "—"}</td>
+                <td>
+                  <span className="op-badge" style={{ background: priority.bg, color: priority.color }}>
+                    <span className="op-badge-dot" style={{ background: priority.dot }} />
+                    {task.priority || "Medium"}
+                  </span>
+                </td>
+                <td>{task.hours_to_complete ? `${task.hours_to_complete} hrs` : "—"}</td>
+                <td>{fmtDate(task.due_date)}</td>
+                <td>{formatHours(task)}</td>
+                <td>{fmtDate(completedDate)}</td>
+                <td>
+                  <span className="op-badge" style={{ background: statusStyle.bg, color: statusStyle.color }}>
+                    {statusLabel(status)}
+                  </span>
+                </td>
+                <td onClick={(event) => event.stopPropagation()}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    {task.audio_url && <a href={task.audio_url} target="_blank" rel="noopener noreferrer">Audio</a>}
+                    {task.document_url && <a href={task.document_url} target="_blank" rel="noopener noreferrer">Document</a>}
+                    {!task.audio_url && !task.document_url && "—"}
+                  </div>
+                </td>
+                <td onClick={(event) => event.stopPropagation()}>
+                  {task.status === "completed" ? (
+                    <span style={{ color: "#16a34a", fontSize: 11.5, fontWeight: 700 }}>✓ Completed</span>
+                  ) : task.status === "not_applicable" ? (
+                    <span style={{ color: "#94a3b8", fontSize: 11.5, fontWeight: 600 }}>— Not Applicable</span>
+                  ) : isPending ? (
+                    <TaskActionMenu
+                      task={task}
+                      onAccept={onAccept}
+                      onHold={onHold}
+                      onContinue={onContinue}
+                      onReschedule={onReschedule}
+                      onSendVerification={onSendVerification}
+                      onRaiseTicket={onRaiseTicket}
+                    />
+                  ) : (
+                    <span style={{ color: "#64748b", fontSize: 11.5, fontWeight: 600 }}>
+                      {task.is_held ? "On hold" : "In progress"}
+                    </span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 function TaskList({
   tasks,
@@ -1349,6 +1551,8 @@ function TaskList({
   recurringMode = false,   // ← add
   onDone,                  // ← add     
   onNotApplicable,         // ← add 
+  activityMaps, 
+  onRejectTask,
 }) {
   const filtered = applyFilters(tasks, filters);
   const hasActiveFilters = Object.values(filters).some((v) => v !== "");
@@ -1407,6 +1611,8 @@ function TaskList({
          recurringMode={recurringMode}     
           onDone={onDone}                      
           onNotApplicable={onNotApplicable}  
+           activityMaps={activityMaps}
+           onRejectTask={onRejectTask}
         />
       )}
     </>
@@ -2046,7 +2252,7 @@ function ProxyLeaveTable({
           month: "short",
           year: "numeric",
         })
-      : "—";
+      : "-";
 
   return (
     <div className="tt-wrap">
@@ -2468,6 +2674,7 @@ const [allSites, setAllSites] = useState([]);
 const NAV_COLORS = {
   "my-tasks": "#2563eb",
   "recurring-tasks": "#2563eb",
+  "all-tasks": "#2563eb",
   "my-reschedules": "#2563eb",
   "verify-requests": "#2563eb",
   "new-tickets": "#ea580c",
@@ -2548,6 +2755,8 @@ function NavButton({ itemKey, icon, label, isActive, isHovered, onEnter, onLeave
     </button>
   );
 }
+  const [rejectTaskModal, setRejectTaskModal] = useState(null); // { task, reason }
+  const [rejectingTaskId, setRejectingTaskId] = useState(null);
   const [rescheduleTask, setRescheduleTask] = useState(null); // task object or null
   const [rescheduleForm, setRescheduleForm] = useState({
     requested_date: "",
@@ -2582,6 +2791,7 @@ const [ticketDetail, setTicketDetail] = useState(null);
   // Tasks
   const [myTasks, setMyTasks] = useState([]);
   const [recurringTasks, setRecurringTasks] = useState([]);
+  const [allAssignedTasks, setAllAssignedTasks] = useState([]);
   const [loadingTasks, setLoadingTasks] = useState(false);
   const [updatingId, setUpdatingId] = useState(null);
 
@@ -2742,6 +2952,7 @@ useEffect(() => {
   const [recurringFilters, setRecurringFilters] = useState({
     ...EMPTY_FILTERS,
   });
+  const [allTaskFilters, setAllTaskFilters] = useState({ ...EMPTY_FILTERS });
   
 
   const [userMap, setUserMap] = useState({});
@@ -3032,6 +3243,7 @@ useEffect(() => {
       .order("created_at", { ascending: false });
 
     const mine = mineAll || [];
+    setAllAssignedTasks(mine);
     setMyTasks(mine.filter((t) => !isRecurringTask(t)));
     setRecurringTasks(
       mine.filter((t) => isRecurringTask(t) && isTodayOrPast(t.due_date)),
@@ -3459,6 +3671,37 @@ const handleNavClick = (key) => {
     }
     return base.toISOString().split("T")[0];
   };
+  const handleRejectTaskConfirm = async () => {
+  if (!rejectTaskModal?.reason?.trim())
+    return showToast("error", "Please provide a reason for rejecting this task.");
+
+  const task = rejectTaskModal.task;
+  const reason = rejectTaskModal.reason.trim();
+  setRejectingTaskId(task.id);
+
+  const { error } = await supabase
+    .from("tasks")
+    .update({
+      status: "rejected",
+      employee_rejection_reason: reason,
+      rejected_by: user.user_name,
+      rejected_at: new Date().toISOString(),
+    })
+    .eq("id", task.id);
+
+  setRejectingTaskId(null);
+  if (error) return showToast("error", "Failed to reject task: " + error.message);
+
+  const patch = (list) => list.filter((t) => t.id !== task.id);
+  setMyTasks((p) => patch(p));
+  setRecurringTasks((p) => patch(p));
+  setAllAssignedTasks((p) =>
+    p.map((t) => (t.id === task.id ? { ...t, status: "rejected", employee_rejection_reason: reason } : t)),
+  );
+
+  showToast("success", `"${task.title}" rejected and sent back to ${userMap[task.assigned_by] || task.assigned_by || "the assigner"}.`);
+  setRejectTaskModal(null);
+};
 const handleAcceptTask = async (task) => {
   const nowIso = new Date().toISOString();
   setUpdatingId(task.id);
@@ -3915,6 +4158,40 @@ const latestVerificationByTask = useMemo(() => {
   });
   return map;
 }, [myVerifications]);
+
+const pendingVerificationByTask = useMemo(() => {
+  const map = new Map();
+  myVerifications.forEach((v) => {
+    if (v.task_id && v.status === "pending") map.set(v.task_id, v);
+  });
+  return map;
+}, [myVerifications]);
+
+const pendingRescheduleByTask = useMemo(() => {
+  const map = new Map();
+  myReschedules.forEach((r) => {
+    if (r.task_id && r.status === "pending") map.set(r.task_id, r);
+  });
+  return map;
+}, [myReschedules]);
+
+const openTicketByTask = useMemo(() => {
+  const map = new Map();
+  raisedTickets.forEach((t) => {
+    if (t.task_id && t.status === "open") map.set(t.task_id, t);
+  });
+  return map;
+}, [raisedTickets]);
+
+const myTaskActivityMaps = useMemo(
+  () => ({
+    verificationMap: pendingVerificationByTask,
+    rescheduleMap: pendingRescheduleByTask,
+    ticketMap: openTicketByTask,
+  }),
+  [pendingVerificationByTask, pendingRescheduleByTask, openTicketByTask],
+);
+
   const allTasks = useMemo(() => {
     const map = new Map();
     [...myTasks, ...recurringTasks].forEach((t) => map.set(t.id, t));
@@ -3964,10 +4241,10 @@ const latestVerificationByTask = useMemo(() => {
 
   const renderContent = () => {
     switch (activeTab) {
-case "my-tasks": {
+    case "my-tasks": {
   return (
     <TaskList
-      tasks={myTasks.filter((t) => t.status !== "completed")}
+      tasks={myTasks.filter((t) => t.status !== "completed" && t.status !== "rejected")}
       loading={loadingTasks}
       onStatusChange={handleStatusChange}
       updatingId={updatingId}
@@ -3983,15 +4260,18 @@ case "my-tasks": {
       onAccept={handleAcceptTask}
       onHold={handleHoldTask}
       onContinue={handleContinueTask}
+      activityMaps={myTaskActivityMaps}
+      onRejectTask={(task) => setRejectTaskModal({ task, reason: "" })} 
       onReschedule={(task) => {
         setRescheduleTask(task);
         setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
       }}
       onDetailClick={(task) => setDetailTask(task)}
+      
     />
   );
 }
-      
+
 case "recurring-tasks":
   return (
     <TaskList
@@ -4019,6 +4299,35 @@ case "recurring-tasks":
       }}
       onDetailClick={(task) => setDetailTask(task)}
     />
+  );
+case "all-tasks":
+  return (
+    <>
+      {loadingTasks ? (
+        <div className="op-empty-state">
+          <div className="op-spinner" />
+          <p className="op-empty-text">Loading tasks…</p>
+        </div>
+      ) : applyFilters(allAssignedTasks, allTaskFilters).length === 0 ? (
+        <div className="op-empty-state">
+          <p className="op-empty-text">No tasks match the current filters.</p>
+        </div>
+      ) : (
+        <TaskHistoryTable
+          tasks={applyFilters(allAssignedTasks, allTaskFilters)}
+          onDetailClick={(task) => setDetailTask(task)}
+          onSendVerification={handleSendVerification}
+          onRaiseTicket={handleRaiseTicket}
+          onAccept={handleAcceptTask}
+          onHold={handleHoldTask}
+          onContinue={handleContinueTask}
+          onReschedule={(task) => {
+            setRescheduleTask(task);
+            setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+          }}
+        />
+      )}
+    </>
   );
   case "apply-leave":
         return (
@@ -6348,7 +6657,7 @@ case "all-drawings":
                   <span className="op-content-title">{activeItem?.label}</span>
                 </div>
                 {/* Show filter controls only on task tabs */}
-                {["my-tasks", "recurring-tasks"].includes(activeTab) && (
+                {["my-tasks", "recurring-tasks", "all-tasks"].includes(activeTab) && (
                   <>
                     <div className="tf-bar-inline" >
                       <TaskFilterBar
@@ -6356,20 +6665,30 @@ case "all-drawings":
                         filters={
                           activeTab === "my-tasks"
                             ? myTaskFilters
-                            : recurringFilters
+                            : activeTab === "recurring-tasks"
+                            ? recurringFilters
+                            : allTaskFilters
                         }
                         onChange={
                           activeTab === "my-tasks"
                             ? makeFilterChange(setMyTaskFilters)
-                            : makeFilterChange(setRecurringFilters)
+                            : activeTab === "recurring-tasks"
+                            ? makeFilterChange(setRecurringFilters)
+                            : makeFilterChange(setAllTaskFilters)
                         }
                         onClear={
                           activeTab === "my-tasks"
                             ? makeFilterClear(setMyTaskFilters)
-                            : makeFilterClear(setRecurringFilters)
+                            : activeTab === "recurring-tasks"
+                            ? makeFilterClear(setRecurringFilters)
+                            : makeFilterClear(setAllTaskFilters)
                         }
                         taskList={
-                          activeTab === "my-tasks" ? myTasks : recurringTasks
+                          activeTab === "my-tasks"
+                            ? myTasks
+                            : activeTab === "recurring-tasks"
+                            ? recurringTasks
+                            : allAssignedTasks
                         }
                       />
                     </div>
@@ -6406,22 +6725,30 @@ case "all-drawings":
                             filters={
                               activeTab === "my-tasks"
                                 ? myTaskFilters
-                                : recurringFilters
+                                : activeTab === "recurring-tasks"
+                                ? recurringFilters
+                                : allTaskFilters
                             }
                             onChange={
                               activeTab === "my-tasks"
                                 ? makeFilterChange(setMyTaskFilters)
-                                : makeFilterChange(setRecurringFilters)
+                                : activeTab === "recurring-tasks"
+                                ? makeFilterChange(setRecurringFilters)
+                                : makeFilterChange(setAllTaskFilters)
                             }
                             onClear={
                               activeTab === "my-tasks"
                                 ? makeFilterClear(setMyTaskFilters)
-                                : makeFilterClear(setRecurringFilters)
+                                : activeTab === "recurring-tasks"
+                                ? makeFilterClear(setRecurringFilters)
+                                : makeFilterClear(setAllTaskFilters)
                             }
                             taskList={
                               activeTab === "my-tasks"
                                 ? myTasks
-                                : recurringTasks
+                                : activeTab === "recurring-tasks"
+                                ? recurringTasks
+                                : allAssignedTasks
                             }
                           />
                         </div>
@@ -6930,6 +7257,63 @@ case "all-drawings":
           </div>
         </div>
       )}
+      {rejectTaskModal && (
+  <div
+    style={{
+      position: "fixed", inset: 0, zIndex: 10040,
+      background: "rgba(15,23,42,.5)", backdropFilter: "blur(4px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
+    }}
+    onClick={(e) => { if (e.target === e.currentTarget) setRejectTaskModal(null); }}
+  >
+    <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 440, boxShadow: "0 24px 64px rgba(0,0,0,.22)", overflow: "hidden" }}>
+      <div style={{ padding: "18px 22px 14px", borderBottom: "1px solid #f1f5f9" }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: "#1e293b" }}>Reject Task</div>
+        <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{rejectTaskModal.task.title}</div>
+      </div>
+      <div style={{ padding: "16px 22px", display: "flex", flexDirection: "column", gap: 6 }}>
+        <label style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}>
+          Reason for Rejection <span style={{ color: "#dc2626" }}>*</span>
+        </label>
+        <textarea
+          rows={3}
+          autoFocus
+          placeholder="Explain why you can't take this task…"
+          style={{
+            fontFamily: "'DM Sans',sans-serif", fontSize: 13.5, color: "#1e293b",
+            background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
+            padding: "9px 12px", outline: "none", width: "100%", resize: "vertical", minHeight: 90,
+          }}
+          value={rejectTaskModal.reason}
+          onChange={(e) => setRejectTaskModal((p) => ({ ...p, reason: e.target.value }))}
+        />
+        <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
+          This will be visible to {userMap[rejectTaskModal.task.assigned_by] || rejectTaskModal.task.assigned_by || "the person who assigned this"}.
+        </span>
+      </div>
+      <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, padding: "12px 22px 18px", borderTop: "1px solid #f1f5f9" }}>
+        <button
+          onClick={() => setRejectTaskModal(null)}
+          style={{ background: "#f1f5f9", color: "#475569", fontSize: 13.5, fontWeight: 600, padding: "9px 18px", borderRadius: 8, border: "1px solid #e2e8f0", cursor: "pointer" }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleRejectTaskConfirm}
+          disabled={rejectingTaskId === rejectTaskModal.task.id || !rejectTaskModal.reason.trim()}
+          style={{
+            background: rejectTaskModal.reason.trim() ? "#dc2626" : "#f1f5f9",
+            color: rejectTaskModal.reason.trim() ? "#fff" : "#94a3b8",
+            fontSize: 13.5, fontWeight: 600, padding: "9px 20px", borderRadius: 8, border: "none",
+            cursor: rejectTaskModal.reason.trim() ? "pointer" : "not-allowed",
+          }}
+        >
+          {rejectingTaskId === rejectTaskModal.task.id ? "Rejecting…" : "Confirm Rejection"}
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       {ticketModal && (
         <div
           style={{
@@ -8973,6 +9357,7 @@ case "all-drawings":
           </div>
         </div>
       )}
+      <PortalFloaters />
     </>
   );
 }

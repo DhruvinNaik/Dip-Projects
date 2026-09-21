@@ -33,6 +33,16 @@ const fmtMonth = (monthKey) => {
   return dt.toLocaleDateString("en-IN", { month: "long", year: "numeric" });
 };
 
+function formatWorkSummary(summary) {
+  return String(summary || "")
+    .replace(/\r\n?/g, "\n")
+    .split(/[\n|]/)
+    .map((line) => line.replace(/^\s*[•◦▪\-*]\s*/, "").trim())
+    .filter(Boolean)
+    .map((line) => `• ${line}`)
+    .join("\n");
+}
+
 function colKey(scope, category, labour, gender, skill) {
   return [
     (scope    || "").toUpperCase(),
@@ -451,6 +461,9 @@ export default function ManpowerReport({ user }) {
     // ── Worksheet data array + styles ─────────────────────────────
     const ws   = {};
     const merg = []; // merged cell ranges
+    const rowHeights = [
+      { hpt: 20 }, { hpt: 20 }, { hpt: 20 }, { hpt: 18 }, { hpt: 18 },
+    ];
     let   R    = 0;  // current row index (0-based)
 
     const setCell = (r, c, v, st) => {
@@ -534,7 +547,12 @@ export default function ManpowerReport({ user }) {
       // Daily rows
       for (const de of mDates) {
         const rowTotal     = rd.cols.reduce((s, c) => s + (de.counts.get(c.key) || 0), 0);
-        const summaryLines = (de.summary || "").split("\n").slice(0, 5).join(" | ").replace(/^[•\-]\s*/gm, "").slice(0, 200);
+        const summaryLines = formatWorkSummary(de.summary);
+        const summaryLineCount = Math.max(
+          summaryLines.split("\n").length,
+          Math.ceil(summaryLines.length / 45),
+        );
+        rowHeights[R] = { hpt: Math.max(24, Math.min(409, summaryLineCount * 15 + 8)) };
 
         setCell(R, 0, fmtDate(de.date), style(CLR.date_cell,    { align: { horizontal:"left" }, font: { bold:true, sz:10, color:{rgb:"FF334155"} } }));
         setCell(R, 1, summaryLines||"—", style(CLR.summary_cell, { align: { horizontal:"left", wrapText:true }, font: { bold:false, sz:9, color:{rgb:"FF475569"} } }));
@@ -597,9 +615,7 @@ export default function ManpowerReport({ user }) {
       ...rd.cols.map(() => ({ wch: 11 })),
       { wch: 12 },  // Daily Total
     ];
-    ws["!rows"] = [
-      { hpt: 20 }, { hpt: 20 }, { hpt: 20 }, { hpt: 18 }, { hpt: 18 }, // 5 header rows
-    ];
+    ws["!rows"] = rowHeights;
 
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Manpower Report");
@@ -781,11 +797,11 @@ export default function ManpowerReport({ user }) {
                             /* ── Daily rows ── */
                             ...mDates.map((de) => {
                               const rowTotal     = rd.cols.reduce((s, c) => s + (de.counts.get(c.key) || 0), 0);
-                              const summaryLines = (de.summary || "").split("\n").slice(0, 5).join(", ").replace(/^[•\-]\s*/gm, "").slice(0, 160);
+                              const summaryLines = formatWorkSummary(de.summary);
                               return (
                                 <tr key={`day-${de.date}`}>
                                   <td className="td-date">{fmtDate(de.date)}</td>
-                                  <td className="td-summary">{summaryLines || "—"}</td>
+                                  <td className="td-summary" style={{ whiteSpace: "pre-line" }}>{summaryLines || "—"}</td>
                                   {rd.cols.map((col, ci) => {
                                     const cnt = de.counts.get(col.key) || 0;
                                     return cnt > 0

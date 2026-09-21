@@ -1,28 +1,46 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { createClient } from "@supabase/supabase-js";
-import Navbar from "../components/Navbar";
-import PortalFloaters from "../components/PortalFloaters";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import * as XLSX from "xlsx";
+import { Navigate, useNavigate } from "react-router-dom";
+import "./SiteMyTasks.css";
+import Navbar from '../../components/Navbar';
 import SiteReport from "./Sitereport";
 import { ClockInOut, CalendarView, CLOCK_CSS } from "./Clockinout.jsx";
 import MyReports from "./MyReports";
+import EaMeetingReport from "./EaMeetingReport";
 import DPR from "./Dpr.jsx";
 import ManpowerReport from "./Manpowerreport.jsx";
 import Profile from "./Profile";
 import WprGenerator from "./Wprgenerator.jsx";
 import MatRequirement from "./MatRequirement.jsx";
+import SiteTeamChat from "./SiteTeamChat.jsx";
 import { useMaterialUnseenCount } from "./MatRequirement"; // adjust path
-import { canAccessPortal } from "../access.js";
+import { canAccessPortal } from '../../access.js';
 import "./SitePortal.css";
-import { computeMonthlyLeaveBalance, isMonthlyLeaveRole } from "./leaveUtils.js";
-import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
-import SiteMyTasks from "./SiteMyTasks.jsx";
-import "./SiteMyTasks.css";
+import {
+  computeMonthlyLeaveBalance,
+  isMonthlyLeaveRole,
+  canApproveSiteLeave,
+  resolveApprovalChain,
+  fetchManagedSites,
+  leaveActionSlot,
+  deriveLeaveStatus,
+} from "./leaveUtils.js";
 
-// ─── Supabase ────────────────────────────────────────────────────────────────
-const SUPABASE_URL = "https://efqfjfthsleymhljswcq.supabase.co";
-const SUPABASE_ANON =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVmcWZqZnRoc2xleW1obGpzd2NxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODAzNDY0MjMsImV4cCI6MjA5NTkyMjQyM30.PYMRiKdnhzb6pkvhDB4M4Qdp3nSGhsZpHGuclVqYNMs";
-const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+import { supabase, supabaseUrl, supabaseAnonKey, fromMaybe, tableExists } from '../../lib/supabase';
+import { useAuth } from '../../auth/AuthContext';
+import { api, syncSiteUser, isSiteHead, isOfficeSiteViewer } from '../../lib/api';
+import { WeeklyPlanAttachmentPreview } from '../../components/WeeklyPlanAttachmentPreview';
+import { formatWeekDate } from "../../lib/weeklyPlanPreview";
+
+export { ROLE_LEVELS, resolveApprovalChain, deriveLeaveStatus } from "./leaveUtils.js";
+
+const OFFICE_SITE_TABS = new Set([
+  "profile",
+  "report-submissions",
+  "site-report",
+  "my-reports",
+  "leave-approvals",
+]);
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const today = () => new Date().toISOString().split("T")[0];
@@ -152,7 +170,7 @@ const Ico = {
       height="16"
       viewBox="0 0 24 24"
       fill="none"
-      stroke="#db2777"
+      stroke="#16a34a"
       strokeWidth="2"
       strokeLinecap="round"
     >
@@ -427,61 +445,127 @@ const Ico = {
       <path d="M20 6L9 17l-5-5" />
     </svg>
   ),
-};
-
-// ─── Nav structure ────────────────────────────────────────────────────────────
-const NAV = [
-  { key: "clock-in", label: "Clock In / Out", icon: Ico.clock },
-  { key: "calendar", label: "Attendance", icon: Ico.cal },
-  {
-    section: "leave",
-    label: "Leave",
-    children: [
-      { key: "apply-leave", label: "Apply Leave", icon: Ico.apply },
-      { key: "my-leave", label: "My Leave", icon: Ico.leave },
-      { key: "leave-approvals", label: "Leave Approvals", icon: Ico.leave },
-    ],
-  },
-  {
-    section: "reports",
-    label: "Reports",
-    children: [
-      { key: "daily-report", label: "Daily Report", icon: Ico.report },
-      { key: "wpr-generator", label: "Weekly Report", icon: Ico.weekly },
-      { key: "site-report", label: "Site Visit Report", icon: Ico.site },
-      //{ key: "material-requirement", label: "Material Requirement", icon: Ico.materialRequirement,},
-      { key: "my-reports", label: "My Reports", icon: Ico.myRpt },
-      { key: "weekly-plan", label: "Weekly Plan", icon: Ico.weeklyPlan },
-      { key: "my-tasks", label: "My Tasks", icon: Ico.weeklyPlan },
-      { key: "manpower-reports", label: "Manpower Report", icon: Ico.manRpt },
-    ],
-  },
-];  
-const REPORT_SUBMISSIONS_ITEM = {
-  key: "report-submissions",
-  label: "Report Submissions",
-  icon: (
-    <svg
-      width="18"
-      height="18"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <polyline points="22 12 16 12 14 15 10 15 8 12 2 12" />
-      <path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z" />
+  chat: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4z" />
     </svg>
   ),
 };
 
-const ALL_ITEMS = [
-  ...NAV.flatMap((n) => (n.children ? n.children : [n])),
-  REPORT_SUBMISSIONS_ITEM,
-  { key: "profile", label: "Profile & Settings", icon: Ico.profile },
-];
+function visAllows(visMap, key, user) {
+  if (!visMap || !visMap[key]) return true;
+  const row = visMap[key];
+  const role = String(user?.role || "").toLowerCase();
+  const blob = `${user?.department || ""} ${user?.designation || ""}`.toLowerCase();
+  if (role === "admin") return row.admin !== false;
+  if (user?.is_mis_executive || /\bmis\b/.test(blob)) return row.mis !== false;
+  if (isSiteHead(user)) return row.site_head !== false;
+  if (isOfficeSiteViewer(user)) return row.employee !== false;
+  return row.site !== false;
+} 
+// ─── Nav structure ────────────────────────────────────────────────────────────
+function reportMatchesTeam(rawName, teamNames) {
+  const n = String(rawName || "").toLowerCase().trim();
+  if (!n || !teamNames?.size) return false;
+  for (const t of teamNames) {
+    if (!t) continue;
+    if (n === t) return true;
+    if (t.length >= 4 && (n.includes(t) || t.includes(n))) return true;
+  }
+  return false;
+}
+
+function showLeaveApprovalsMenu(user, visMap) {
+  const canAct =
+    isSiteHead(user) || canApproveSiteLeave(user) || !!user?._isApprover;
+  if (!canAct) return false;
+  if (!visMap || !visMap["site-leave-approvals"]) return true;
+  return visAllows(visMap, "site-leave-approvals", user) || canAct;
+}
+
+/** Base Site Engineer menu + Head oversight items when isSiteHead */
+function isBeenaOrPcUser(user) {
+  if (!user) return false;
+  if (String(user.role || "").toLowerCase() === "admin") return false;
+  const name = `${user.full_name || user.name || ""} ${user.username || user.user_name || ""}`.toLowerCase();
+  if (/beena/.test(name)) return true;
+  const blob = `${user.role || ""} ${user.designation || ""} ${user.department || ""}`.toLowerCase();
+  return /\bpc\b/.test(blob) || blob.includes("process controller");
+}
+
+function buildNav(user, visMap) {
+  const showSiteLeave = showLeaveApprovalsMenu(user, visMap);
+
+  if (isOfficeSiteViewer(user)) {
+    const items = [
+      { key: "leave-approvals", label: "Leave Approvals", icon: Ico.leave },
+    ];
+    if (visAllows(visMap, "site-report", user)) {
+      items.push({ key: "site-report", label: "Site Visit Report", icon: Ico.site });
+    }
+    items.push({ key: "my-reports", label: "My Reports", icon: Ico.myRpt });
+    if (visAllows(visMap, "site-team-submissions", user)) {
+      items.push({ key: "report-submissions", label: "Team Submissions", icon: Ico.myRpt });
+    }
+    return items;
+  }
+
+  const leaveChildren = [
+    { key: "apply-leave", label: "Apply Leave", icon: Ico.apply },
+    { key: "my-leave", label: "My Leave", icon: Ico.leave },
+  ];
+  const head = isSiteHead(user);
+  const showTeam = visAllows(visMap, "site-team-submissions", user) && head;
+
+  if (showSiteLeave) {
+    leaveChildren.push({
+      key: "leave-approvals",
+      label: "Leave Approvals",
+      icon: Ico.leave,
+    });
+  }
+
+  const reportChildren = [
+    { key: "daily-report", label: "Daily Report (DPR)", icon: Ico.report },
+    { key: "wpr-generator", label: "Weekly Report (WPR)", icon: Ico.weekly },
+    { key: "site-report", label: "Site Visit Report", icon: Ico.site },
+    { key: "my-reports", label: "My Reports", icon: Ico.myRpt },
+    { key: "weekly-plan", label: "Weekly Plan", icon: Ico.weeklyPlan },
+    { key: "manpower-reports", label: "Manpower Report", icon: Ico.manRpt },
+  ];
+  if (showTeam) {
+    reportChildren.push({
+      key: "report-submissions",
+      label: "Team Submissions",
+      icon: Ico.myRpt,
+    });
+  }
+
+  const showChat = visAllows(visMap, "team-chat", user);
+  const showEaReport = isBeenaOrPcUser(user) || isBeenaOrPcUser({
+    ...user,
+    full_name: user?.name,
+    designation: user?.role || user?.designation,
+  });
+
+  return [
+    ...(showEaReport
+      ? [{ key: "ea-attendance", label: "EM Attendance Report", icon: Ico.cal }]
+      : []),
+    { key: "clock-in", label: "Clock In / Out", icon: Ico.clock },
+    { key: "calendar", label: "Attendance", icon: Ico.cal },
+    ...(showChat ? [{ key: "team-chat", label: "Team chat", icon: Ico.chat }] : []),
+    { section: "leave", label: "Leave", children: leaveChildren },
+    { section: "reports", label: "Reports", children: reportChildren },
+  ];
+}
+
+function buildAllItems(user, visMap) {
+  return [
+    ...buildNav(user, visMap).flatMap((n) => (n.children ? n.children : [n])),
+    { key: "profile", label: "Profile & Settings", icon: Ico.profile },
+  ];
+}
 
 function DateField({
   value,
@@ -554,22 +638,19 @@ function MyLeave({ user, onApply }) {
 
   useEffect(() => {
     (async () => {
-      const { data } = await supabase
-        .from("leaves")
-        .select("*")
-        .eq("user_name", user.user_name)
-        .order("created_at", { ascending: false });
+      const { data } = await fromMaybe('site_leaves', (q) =>
+        q
+          .select('*')
+          .eq('user_name', user.user_name)
+          .order('created_at', { ascending: false })
+      );
       setLeaves(data || []);
       setLoading(false);
     })();
   }, [user.user_name]);
 
   function computeLeaveStatus(leave) {
-    if (leave.level_approved === false || leave.head_approved === false)
-      return "rejected";
-    if (leave.level_approved === true && leave.head_approved === true)
-      return "approved";
-    return "pending";
+    return deriveLeaveStatus(leave.level_approved, leave.head_approved);
   }
 
   const canCancel = (l) => {
@@ -588,7 +669,7 @@ function MyLeave({ user, onApply }) {
     if (!confirmLeave) return;
     setCancellingId(confirmLeave.id);
     const { error } = await supabase
-      .from("leaves")
+      .from("site_leaves")
       .delete()
       .eq("id", confirmLeave.id);
     setCancellingId(null);
@@ -934,11 +1015,12 @@ function MyLeave({ user, onApply }) {
 }
 function LeaveApprovals({ user }) {
   const [leaves, setLeaves] = useState([]);
+  const [managed, setManaged] = useState({ siteNames: [], headSites: new Set(), coordSites: new Set() });
   const [loading, setLoading] = useState(true);
   const [actioningId, setActioningId] = useState(null);
   const [toast, setToast] = useState(null);
   const [tab, setTab] = useState("pending");
-  const [rejectTarget, setRejectTarget] = useState(null); // { leave, isHead }
+  const [rejectTarget, setRejectTarget] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
 
   const showToast = (type, msg) => { setToast({ type, msg }); setTimeout(() => setToast(null), 4000); };
@@ -946,45 +1028,74 @@ function LeaveApprovals({ user }) {
   const load = useCallback(async () => {
     if (!user?.user_name) return;
     setLoading(true);
-    const { data, error } = await supabase
-      .from("leaves")
-      .select("*")
-      .or(`level_approver_user_name.eq.${user.user_name},head_approver_user_name.eq.${user.user_name}`)
-      .order("created_at", { ascending: false });
-    if (!error) setLeaves(data || []);
+    const sites = await fetchManagedSites(supabase, user);
+    setManaged(sites);
+
+    const named = await fromMaybe("site_leaves", (q) =>
+      q
+        .select("*")
+        .or(`level_approver_user_name.eq.${user.user_name},head_approver_user_name.eq.${user.user_name}`)
+        .order("created_at", { ascending: false })
+    );
+
+    let bySite = { data: [] };
+    if (sites.siteNames.length) {
+      bySite = await fromMaybe("site_leaves", (q) =>
+        q.select("*").in("site_name", sites.siteNames).order("created_at", { ascending: false })
+      );
+    }
+
+    const merged = [];
+    const seen = new Set();
+    [...(bySite.data || []), ...(named.data || [])].forEach((row) => {
+      if (!row?.id || seen.has(row.id)) return;
+      seen.add(row.id);
+      merged.push(row);
+    });
+    merged.sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
+    setLeaves(merged);
     setLoading(false);
-  }, [user?.user_name]);
+  }, [user?.user_name, user?.id]);
 
   useEffect(() => { load(); }, [load]);
 
-  const isMyLevelSlot = (l) => l.level_approver_user_name === user.user_name;
-  const isMyHeadSlot  = (l) => l.head_approver_user_name  === user.user_name;
-  const needsMyAction = (l) =>
-    (isMyLevelSlot(l) && l.level_approved === null) || (isMyHeadSlot(l) && l.head_approved === null);
+  const needsMyAction = (l) => !!leaveActionSlot(l, user, managed);
 
   const pending = leaves.filter(needsMyAction);
   const list = tab === "pending" ? pending : leaves;
 
-  // Approve: no reason needed
   const approve = async (leave) => {
     setActioningId(leave.id);
-    const isHead = isMyHeadSlot(leave);
-    const field = isHead ? "head_approved" : "level_approved";
-    const newLevel = isHead ? leave.level_approved : true;
-    const newHead  = isHead ? true : leave.head_approved;
+    const slot = leaveActionSlot(leave, user, managed);
+    if (!slot) {
+      setActioningId(null);
+      return;
+    }
+    const newLevel = slot === "level" ? true : leave.level_approved;
+    const newHead = slot === "head" ? true : leave.head_approved;
+    const payload = {
+      ...(slot === "level" ? { level_approved: true } : {}),
+      ...(slot === "head" ? { head_approved: true } : {}),
+      status: deriveLeaveStatus(newLevel, newHead),
+    };
 
-    const { error } = await supabase.from("leaves")
-      .update({ [field]: true, status: deriveLeaveStatus(newLevel, newHead) })
-      .eq("id", leave.id);
+    const { error } = await supabase.from("site_leaves").update(payload).eq("id", leave.id);
     setActioningId(null);
     if (error) { showToast("err", "Failed: " + error.message); return; }
-    showToast("ok", "Leave approved.");
+    const waiting =
+      deriveLeaveStatus(newLevel, newHead) === "pending"
+        ? newLevel !== true
+          ? " Waiting for the other approver (Co-ordinator / upper level)."
+          : newHead !== true
+            ? " Waiting for Head."
+            : ""
+        : "";
+    showToast("ok", "Your approval was recorded." + waiting);
     load();
   };
 
-  // Reject: opens modal to collect reason first
   const openReject = (leave) => {
-    setRejectTarget({ leave, isHead: isMyHeadSlot(leave) });
+    setRejectTarget({ leave, isHead: leaveActionSlot(leave, user, managed) === "head" });
     setRejectReason("");
   };
 
@@ -993,15 +1104,15 @@ function LeaveApprovals({ user }) {
     const { leave, isHead } = rejectTarget;
     setActioningId(leave.id);
 
-    const field = isHead ? "head_approved" : "level_approved";
     const newLevel = isHead ? leave.level_approved : false;
-    const newHead  = isHead ? false : leave.head_approved;
+    const newHead = isHead ? false : leave.head_approved;
     const slot = isHead ? "head" : "level";
     const merged = mergeRejectionReason(leave.rejection_reason, slot, user.name, rejectReason.trim());
+    const payload = isHead
+      ? { head_approved: false, status: deriveLeaveStatus(newLevel, false), rejection_reason: merged }
+      : { level_approved: false, status: deriveLeaveStatus(false, newHead), rejection_reason: merged };
 
-    const { error } = await supabase.from("leaves")
-      .update({ [field]: false, status: deriveLeaveStatus(newLevel, newHead), rejection_reason: merged })
-      .eq("id", leave.id);
+    const { error } = await supabase.from("site_leaves").update(payload).eq("id", leave.id);
 
     setActioningId(null);
     setRejectTarget(null);
@@ -1014,6 +1125,12 @@ function LeaveApprovals({ user }) {
 
   return (
     <div>
+      <div className="info-banner" style={{ marginBottom: 18, display: "flex", alignItems: "flex-start", gap: 8 }}>
+        <span style={{ flexShrink: 0, marginTop: 2 }}>{Ico.info}</span>
+        <span>
+          Approve or reject leave from your site team. Engineer leave needs both the upper-level role and the Head — one approval is not enough. If either rejects, the leave is rejected. Co-ordinator leave needs the Head only.
+        </span>
+      </div>
       <div style={{display:"flex",gap:8,marginBottom:18}}>
         <button className={`badge ${tab==="pending"?"badge-amber":"badge-gray"}`} style={{cursor:"pointer",border:"none"}} onClick={()=>setTab("pending")}>
           Pending my action ({pending.length})
@@ -1027,7 +1144,7 @@ function LeaveApprovals({ user }) {
         <div className="empty-state">
           <div className="empty-ico">{Ico.leave}</div>
           <div className="empty-title">{tab==="pending" ? "Nothing pending your approval" : "No leave requests"}</div>
-          <div className="empty-sub">{tab==="pending" ? "You're all caught up." : "Requests routed to you will show up here."}</div>
+          <div className="empty-sub">{tab==="pending" ? "You're all caught up." : "Leaves applied by site staff for your sites will show up here."}</div>
         </div>
       ) : (
         <div className="lv-list">
@@ -1054,14 +1171,14 @@ function LeaveApprovals({ user }) {
                 </div>
 
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {l.level_approver_user_name && (
+                  {(l.level_approver_user_name || l.level_approved === null) && (
                       <span className={`badge ${l.level_approved===true?"badge-green":l.level_approved===false?"badge-red":"badge-amber"}`} style={{fontSize:10}}>
-                        {l.level_approver_role || "Level"} ({l.level_approver_name || l.level_approver_user_name}): {l.level_approved===true?"✓ Approved":l.level_approved===false?"✗ Rejected":"Pending"}
+                        {l.level_approver_role || "Co-ordinator"}{l.level_approver_name || l.level_approver_user_name ? ` (${l.level_approver_name || l.level_approver_user_name})` : ""}: {l.level_approved===true?"✓ Approved":l.level_approved===false?"✗ Rejected":"Pending"}
                       </span>
                     )}
-                    {l.head_approver_user_name && (
+                    {(l.head_approver_user_name || l.head_approved === null) && (
                       <span className={`badge ${l.head_approved===true?"badge-green":l.head_approved===false?"badge-red":"badge-amber"}`} style={{fontSize:10}}>
-                        {l.head_approver_role || "Head"} ({l.head_approver_name || l.head_approver_user_name}): {l.head_approved===true?"✓ Approved":l.head_approved===false?"✗ Rejected":"Pending"}
+                        Head{l.head_approver_name || l.head_approver_user_name ? ` (${l.head_approver_name || l.head_approver_user_name})` : ""}: {l.head_approved===true?"✓ Approved":l.head_approved===false?"✗ Rejected":"Pending"}
                       </span>
                     )}
                 </div>
@@ -1145,28 +1262,34 @@ function ApplyLeave({ user }) {
   const [chain, setChain] = useState(null);
   const [chainLoading, setChainLoading] = useState(true);
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
-const [monthlyBalance, setMonthlyBalance] = useState(null);
-const [balanceLoading, setBalanceLoading] = useState(true);
-const [balanceRefresh, setBalanceRefresh] = useState(0);
-const monthlyScheme = isMonthlyLeaveRole(user);
+  const [monthlyBalance, setMonthlyBalance] = useState(null);
+  const [balanceLoading, setBalanceLoading] = useState(true);
+  const [balanceRefresh, setBalanceRefresh] = useState(0);
+  const [selectedSite, setSelectedSite] = useState("");
+  const monthlyScheme = isMonthlyLeaveRole(user);
+  const applicantRole = user.role || user.designation || "";
 
-useEffect(() => {
-  if (!monthlyScheme) { setBalanceLoading(false); return; }
-  setBalanceLoading(true);
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  computeMonthlyLeaveBalance(supabase, user, thisMonth)
-    .then(setMonthlyBalance)
-    .finally(() => setBalanceLoading(false));
-}, [user.user_name, monthlyScheme, balanceRefresh]);
-  // all sites this user belongs to (for display only)
   const sites =
     Array.isArray(user.site_names) && user.site_names.length
       ? user.site_names
       : user.site_name
         ? [user.site_name]
         : [];
+  const site = selectedSite || sites[0] || "";
+  const sitesKey = sites.join("|");
 
-  const site = sites[0] || ""; // still used for approver chain + submission, unchanged
+  useEffect(() => {
+    if (!monthlyScheme) { setBalanceLoading(false); return; }
+    setBalanceLoading(true);
+    const thisMonth = new Date().toISOString().slice(0, 7);
+    computeMonthlyLeaveBalance(supabase, user, thisMonth)
+      .then(setMonthlyBalance)
+      .finally(() => setBalanceLoading(false));
+  }, [user.user_name, monthlyScheme, balanceRefresh]);
+
+  useEffect(() => {
+    setSelectedSite((prev) => (prev && sites.includes(prev) ? prev : sites[0] || ""));
+  }, [sitesKey]);
 
   const showToast = (msg, ms = 4500) => {
     setToast(msg);
@@ -1174,15 +1297,15 @@ useEffect(() => {
   };
 
   useEffect(() => {
-    if (!site || !user.role) {
+    if (!site || !applicantRole) {
       setChainLoading(false);
       return;
     }
     setChainLoading(true);
-    resolveApprovalChain(supabase, site, user.role, user.user_name)
+    resolveApprovalChain(supabase, site, applicantRole, user.user_name)
       .then(setChain)
       .finally(() => setChainLoading(false));
-  }, [site, user.role, user.user_name]); 
+  }, [site, applicantRole, user.user_name]); 
   const days =
     form.from_date &&
     form.to_date &&
@@ -1228,12 +1351,18 @@ const submit = async () => {
 
     const c =
       chain ||
-      (await resolveApprovalChain(supabase, site, user.role, user.user_name));
+      (await resolveApprovalChain(supabase, site, applicantRole, user.user_name));
 
-    const initialLevel = c.levelApprover ? null : true;
-    const initialHead = c.autoApproved ? true : c.headApprover ? null : true;
+    const initialLevel = c.autoApproved ? true : c.requiresLevel ? null : true;
+    const initialHead = c.autoApproved ? true : null;
 
-  const { error } = await supabase.from("leaves").insert({
+  if (!(await tableExists('site_leaves'))) {
+    setBusy(false);
+    setErr('Leave table is missing. Run backend/sql/fix_site_portal_missing.sql in Supabase SQL Editor, then try again.');
+    return;
+  }
+
+  const { error } = await supabase.from("site_leaves").insert({
     user_name: user.user_name,
     name: user.name,
     leave_type: form.leave_type,
@@ -1280,22 +1409,22 @@ const submit = async () => {
       </div>
     );
 
-    
   return (
     <div>
       <div className="info-banner" style={{ marginBottom: 20, display: "flex", alignItems: "flex-start", gap: 8, width: "100%", boxSizing: "border-box" }}>
         <span style={{ flexShrink: 0, marginTop: 2 }}>{Ico.info}</span>
         <span style={{ flex: 1, minWidth: 0 }}>
           {chainLoading ? (
-            "Finding your approvers…"
+            "Finding your approvers for this site…"
           ) : chain?.autoApproved ? (
-            "You are the top of the approval chain for this site — your leave will be auto-approved."
+            "You are the Head of this site — your leave will be auto-approved."
           ) : (
             <>
-              Your leave will be routed to{" "}
+              Leave for <strong>{site || "this site"}</strong> will be routed to{" "}
               {chain?.levelApprover && (
                 <strong>
                   {chain.levelApprover.name || chain.levelApprover.username}
+                  {chain.levelApprover.role ? ` (${chain.levelApprover.role})` : ""}
                 </strong>
               )}
               {chain?.levelApprover && chain?.headApprover && " and "}
@@ -1306,12 +1435,16 @@ const submit = async () => {
               )}
               {!chain?.levelApprover &&
                 !chain?.headApprover &&
-                "your project head for approval."}{" "}
+                (chain?.requiresLevel
+                  ? "the Co-ordinator and Head of this site."
+                  : "the Head of this site.")}
+              {chain?.requiresLevel
+                ? " Both must approve before leave is granted. If either rejects, the request is rejected."
+                : " Only the Head needs to approve."}
             </>
           )}
-        </span> 
+        </span>
       </div>
-      
       {err && (
         <div className="info-banner warn-banner" style={{ marginBottom: 16 }}>
           {Ico.info} {err}
@@ -1321,13 +1454,38 @@ const submit = async () => {
       <div
         style={{ display: "flex", gap: 10, marginBottom: 18, flexWrap: "wrap" }}
       >
-        <div
-          style={{ background: "var(--paper)", border: "1px solid var(--line2)", borderRadius: 9, padding: "8px 14px", fontSize: 12.5,}}>
-          <span style={{ color: "var(--ink3)", fontWeight: 600 }}>
-            Site{sites.length > 1 ? "s" : ""}:{"  "}
-          </span>
-          <strong>{sites.length ? sites.join(", ") : "Not Assigned"}</strong>
-        </div>
+        {sites.length > 1 ? (
+          <div style={{ background: "var(--paper)", border: "1px solid var(--line2)", borderRadius: 9, padding: "6px 12px", fontSize: 12.5, display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ color: "var(--ink3)", fontWeight: 600 }}>Site:</span>
+            <select
+              className="finput"
+              value={site}
+              onChange={(e) => {
+                setSelectedSite(e.target.value);
+                setInvalidFields((f) => f.filter((x) => x !== "Site"));
+              }}
+              style={{
+                width: "auto",
+                minWidth: 180,
+                padding: "4px 8px",
+                fontWeight: 700,
+                borderColor: invalidFields.includes("Site") ? "var(--red)" : undefined,
+              }}
+            >
+              {sites.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <div
+            style={{ background: "var(--paper)", border: "1px solid var(--line2)", borderRadius: 9, padding: "8px 14px", fontSize: 12.5,}}>
+            <span style={{ color: "var(--ink3)", fontWeight: 600 }}>
+              Site:{"  "}
+            </span>
+            <strong>{sites.length ? sites[0] : "Not Assigned"}</strong>
+          </div>
+        )}
         {monthlyScheme && (
         <div style={{
           display: "flex", alignItems: "center", gap: 8,
@@ -1497,112 +1655,516 @@ const submit = async () => {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// WEEKLY REPORT
+// WEEKLY PLAN
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function WeeklyReport() {
-  return (
-    <div className="empty-state" style={{ padding: "80px 24px" }}>
-      <div className="empty-ico" style={{ width: 64, height: 64 }}>
-        {Ico.weeklyPlan}
-      </div>
-      <div className="empty-title" style={{ fontSize: 16 }}>
-        Weekly Planning
-      </div>
-      <div className="empty-sub">
-        This feature is coming soon. Weekly consolidated reports will appear
-        here.
-      </div>
-    </div>
-  );
-}
- //
-// ═══════════════════════════════════════════════════════════════════════════════
-// MONTHLY REPORT
-// ═══════════════════════════════════════════════════════════════════════════════
-function MonthlyReport() {
-  return (
-    <div className="empty-state" style={{ padding: "80px 24px" }}>
-      <div className="empty-ico" style={{ width: 64, height: 64 }}>
-        {Ico.monthly}
-      </div>
-      <div className="empty-title" style={{ fontSize: 16 }}>
-        Monthly Report
-      </div>
-      <div className="empty-sub">
-        This feature is coming soon. Monthly consolidated reports will appear
-        here.
-      </div>
-    </div>
-  );
-}
-export const ROLE_LEVELS = [
-  "Site Engineer",
-  "Site Incharge",
-  "Site Coordinator",
-  "Project Head",
+const EXCEL_DAY_PAIR_COLORS = [
+  ["#FFF2CC", "#FCE4D6"],
+  ["#DDEBF7", "#E2EFDA"],
+  ["#E4DFEC", "#FCE4D6"],
+  ["#DDEBF7", "#FFF2CC"],
+  ["#E2EFDA", "#FCE4D6"],
+  ["#FCE4D6", "#DDEBF7"],
+  ["#FFF2CC", "#E4DFEC"],
 ];
-const normRole = (s) => (s || "").trim().toLowerCase();
 
-async function findUserForRole(supabase, site, role) {
-  const { data } = await supabase
-    .from("user_details")
-    .select("username, name, role")
-    .ilike("role", role)
-    .eq("status", "Active")
-    .or(`site_name.eq.${site},site_names.cs.{${site}}`)
-    .limit(1)
-    .maybeSingle();
-  return data || null;
+function excelArgbToCss(value) {
+  if (!value) return "";
+  if (typeof value === "object") {
+    if (value.argb) return excelArgbToCss(value.argb);
+    if (value.rgb) return excelArgbToCss(value.rgb);
+    return "";
+  }
+  const hex = String(value).replace(/^#/, "").replace(/\s+/g, "");
+  if (!hex || /^0+$/i.test(hex)) return "";
+  if (hex.length === 8) return `#${hex.slice(2)}`;
+  if (hex.length === 6) return `#${hex}`;
+  return "";
 }
 
-export async function resolveApprovalChain(
-  supabase,
-  site,
-  applicantRole,
-  applicantUsername,
-) {
-  if (!site) {
-    // No site assigned — fall back to admin-direct approval (no chain)
-    return { levelApprover: null, headApprover: null, autoApproved: false };
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function isDarkHex(bg) {
+  const hex = String(bg || "").replace(/^#/, "");
+  if (hex.length !== 6) return false;
+  const r = parseInt(hex.slice(0, 2), 16);
+  const g = parseInt(hex.slice(2, 4), 16);
+  const b = parseInt(hex.slice(4, 6), 16);
+  if ([r, g, b].some((n) => Number.isNaN(n))) return false;
+  return (r * 299 + g * 587 + b * 114) / 1000 < 150;
+}
+
+function statusFallbackStyle(text) {
+  const t = String(text || "").trim().toUpperCase();
+  if (!t) return null;
+  if (/(COMPLETED|COMPLETE|DONE)/.test(t)) return { bg: "#C6EFCE", color: "#006100" };
+  if (/IN\s*PROGRESS|PROGRESS/.test(t)) return { bg: "#BDD7EE", color: "#1F4E79" };
+  if (/PENDING/.test(t)) return { bg: "#FFEB9C", color: "#9C5700" };
+  if (/ON\s*HOLD|HOLD/.test(t)) return { bg: "#FFC7CE", color: "#9C0006" };
+  if (/CANCEL/.test(t)) return { bg: "#F2F2F2", color: "#595959" };
+  return null;
+}
+
+function fallbackColumnFill(colIdx, rowIdx, display) {
+  const status = statusFallbackStyle(display);
+  if (status) return status.bg;
+
+  if (rowIdx <= 3) return "#1F4E79";
+  if (rowIdx <= 6) return colIdx % 2 === 0 ? "#305496" : "#2E75B6";
+
+  if (colIdx === 0) return "#D6DCE4";
+  if (colIdx === 1) return "#E2EFDA";
+
+  const dayIdx = Math.floor((colIdx - 2) / 2);
+  const pair = EXCEL_DAY_PAIR_COLORS[((dayIdx % EXCEL_DAY_PAIR_COLORS.length) + EXCEL_DAY_PAIR_COLORS.length) % EXCEL_DAY_PAIR_COLORS.length];
+  return pair[(colIdx - 2) % 2];
+}
+
+function buildTableHtml(matrix, merges = []) {
+  const rowCount = matrix.length;
+  const colCount = matrix.reduce((max, row) => Math.max(max, row.length), 0);
+  if (!rowCount || !colCount) {
+    return "<div style='padding:12px;color:#6b7280;'>No spreadsheet data available.</div>";
   }
-  const idx = ROLE_LEVELS.findIndex(
-    (r) => normRole(r) === normRole(applicantRole),
-  );
-  const headRole = ROLE_LEVELS[ROLE_LEVELS.length - 1];
 
-  if (idx === -1)
-    return { levelApprover: null, headApprover: null, autoApproved: false };
-  if (idx === ROLE_LEVELS.length - 1)
-    return { levelApprover: null, headApprover: null, autoApproved: true };
-
-  let levelApprover = null;
-  for (let i = idx + 1; i < ROLE_LEVELS.length - 1; i++) {
-    const candidate = await findUserForRole(supabase, site, ROLE_LEVELS[i]);
-    if (candidate && candidate.username !== applicantUsername) {
-      levelApprover = candidate;
-      break;
+  const mergeStarts = new Map();
+  const covered = new Set();
+  for (const merge of merges) {
+    const r1 = merge.r1;
+    const c1 = merge.c1;
+    const r2 = merge.r2;
+    const c2 = merge.c2;
+    mergeStarts.set(`${r1}:${c1}`, { rowSpan: r2 - r1 + 1, colSpan: c2 - c1 + 1 });
+    for (let r = r1; r <= r2; r += 1) {
+      for (let c = c1; c <= c2; c += 1) {
+        if (r === r1 && c === c1) continue;
+        covered.add(`${r}:${c}`);
+      }
     }
   }
 
-  const headApprover = await findUserForRole(supabase, site, headRole);
+  const rows = [];
+  for (let r = 0; r < rowCount; r += 1) {
+    const cells = [];
+    for (let c = 0; c < colCount; c += 1) {
+      if (covered.has(`${r}:${c}`)) continue;
+      const cell = matrix[r][c] || { display: "", bg: "", color: "", bold: false, align: "left" };
+      const display = cell.display ?? "";
+      const status = statusFallbackStyle(display);
+      const bg = cell.bg || fallbackColumnFill(c, r, display);
+      const color = cell.color || (status && !cell.bg ? status.color : null) || (isDarkHex(bg) ? "#FFFFFF" : "#111827");
+      const bold = cell.bold || r <= 6 || Boolean(status);
+      const align = cell.align || (c === 0 || c >= 2 ? "center" : "left");
+      const span = mergeStarts.get(`${r}:${c}`);
+      const minWidth = c === 1 ? 160 : c === 0 ? 56 : 88;
 
-  if (
-    levelApprover &&
-    headApprover &&
-    levelApprover.username === headApprover.username
-  ) {
-    levelApprover = null;
+      const style = [
+        `background:${bg}`,
+        `color:${color}`,
+        bold ? "font-weight:700" : "font-weight:500",
+        `text-align:${align}`,
+        "vertical-align:middle",
+        "white-space:normal",
+        "padding:6px 8px",
+        "border:1px solid #9ca3af",
+        `min-width:${minWidth}px`,
+        "line-height:1.25",
+      ].join(";");
+
+      cells.push(
+        `<td style="${style}"${span && span.rowSpan > 1 ? ` rowspan="${span.rowSpan}"` : ""}${span && span.colSpan > 1 ? ` colspan="${span.colSpan}"` : ""}>${escapeHtml(display)}</td>`
+      );
+    }
+    rows.push(`<tr>${cells.join("")}</tr>`);
   }
 
-  return { levelApprover, headApprover, autoApproved: false };
-}
-export function deriveLeaveStatus(levelApproved, headApproved) {
-  if (levelApproved === false || headApproved === false) return "rejected";
-  if (levelApproved === true && headApproved === true) return "approved";
-  return "pending";
+  return `<table>${rows.join("")}</table>`;
 }
 
+function excelJsCellDisplay(cell) {
+  if (!cell || cell.value == null || cell.value === "") return "";
+  const value = cell.value;
+  if (typeof value === "object") {
+    if (value.richText) return value.richText.map((p) => p.text || "").join("");
+    if (value.text) return String(value.text);
+    if (value.result != null) return String(value.result);
+    if (value instanceof Date) {
+      return value.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    }
+    if (Array.isArray(value.formula) || value.formula) return value.result != null ? String(value.result) : "";
+  }
+  if (value instanceof Date) {
+    return value.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  }
+  return String(value);
+}
+
+function colLettersToIndex(letters) {
+  let n = 0;
+  const s = String(letters || "").toUpperCase();
+  for (let i = 0; i < s.length; i += 1) {
+    n = n * 26 + (s.charCodeAt(i) - 64);
+  }
+  return n - 1;
+}
+
+function decodeExcelRef(ref) {
+  const match = String(ref || "").toUpperCase().match(/^([A-Z]+)(\d+)$/);
+  if (!match) return null;
+  return { r: Number(match[2]) - 1, c: colLettersToIndex(match[1]) };
+}
+
+async function parseWorkbookWithExcelJs(arrayBuffer) {
+  const ExcelJS = (await import("exceljs")).default;
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(arrayBuffer);
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) throw new Error("No spreadsheet data found");
+
+  const rowCount = Math.max(worksheet.actualRowCount || 0, worksheet.rowCount || 0);
+  const colCount = Math.max(worksheet.actualColumnCount || 0, worksheet.columnCount || 0);
+  if (!rowCount || !colCount) throw new Error("No spreadsheet data found");
+
+  const matrix = Array.from({ length: rowCount }, () =>
+    Array.from({ length: colCount }, () => ({ display: "", bg: "", color: "", bold: false, align: "left" }))
+  );
+
+  worksheet.eachRow({ includeEmpty: true }, (row, rowNumber) => {
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const r = rowNumber - 1;
+      const c = colNumber - 1;
+      if (r >= rowCount || c >= colCount) return;
+
+      const fill = cell.fill || {};
+      const fg =
+        fill.type === "pattern"
+          ? excelArgbToCss(fill.fgColor) || excelArgbToCss(fill.bgColor)
+          : excelArgbToCss(fill.fgColor);
+      const font = cell.font || {};
+      const align = (cell.alignment && cell.alignment.horizontal) || "left";
+
+      matrix[r][c] = {
+        display: excelJsCellDisplay(cell),
+        bg: fg && !/^#(ffffff|000000)$/i.test(fg) ? fg : "",
+        color: excelArgbToCss(font.color),
+        bold: Boolean(font.bold),
+        align,
+      };
+    });
+  });
+
+  const merges = [];
+  const mergeModel = (worksheet.model && worksheet.model.merges) || [];
+  for (const ref of mergeModel) {
+    const [start, end] = String(ref).split(":");
+    const s = decodeExcelRef(start);
+    const e = decodeExcelRef(end || start);
+    if (s && e) merges.push({ r1: s.r, c1: s.c, r2: e.r, c2: e.c });
+  }
+
+  if (!merges.length && worksheet._merges) {
+    for (const merge of Object.values(worksheet._merges)) {
+      merges.push({
+        r1: merge.top - 1,
+        c1: merge.left - 1,
+        r2: merge.bottom - 1,
+        c2: merge.right - 1,
+      });
+    }
+  }
+
+  return buildTableHtml(matrix, merges);
+}
+
+function parseWorkbookWithXlsx(arrayBuffer) {
+  const workbook = XLSX.read(arrayBuffer, { type: "array", cellDates: true });
+  const firstSheetName = workbook.SheetNames[0];
+  const sheet = workbook.Sheets[firstSheetName];
+  if (!sheet) throw new Error("No spreadsheet data found");
+
+  const range = sheet["!ref"] ? XLSX.utils.decode_range(sheet["!ref"]) : null;
+  if (!range) throw new Error("No spreadsheet data found");
+
+  const matrix = [];
+  for (let r = range.s.r; r <= range.e.r; r += 1) {
+    const row = [];
+    for (let c = range.s.c; c <= range.e.c; c += 1) {
+      const cell = sheet[XLSX.utils.encode_cell({ r, c })] || {};
+      const value = cell.v != null ? cell.v : "";
+      row.push({
+        display: value instanceof Date
+          ? value.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+          : String(value),
+        bg: "",
+        color: "",
+        bold: false,
+        align: c === 0 || c >= 2 ? "center" : "left",
+      });
+    }
+    matrix.push(row);
+  }
+
+  const merges = (Array.isArray(sheet["!merges"]) ? sheet["!merges"] : []).map((m) => ({
+    r1: m.s.r,
+    c1: m.s.c,
+    r2: m.e.r,
+    c2: m.e.c,
+  }));
+
+  return buildTableHtml(matrix, merges);
+}
+
+function isPdfAttachment(fileName, fileUrl) {
+  const lower = String(fileName || fileUrl || "").toLowerCase();
+  return lower.includes(".pdf") || lower.endsWith("pdf");
+}
+
+function ExcelSheetPreview({ fileUrl, fileName }) {
+  const isPdf = isPdfAttachment(fileName, fileUrl);
+  const [sheetHtml, setSheetHtml] = useState("");
+  const [loading, setLoading] = useState(Boolean(fileUrl) && !isPdf);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!fileUrl || isPdf) {
+      setSheetHtml("");
+      setLoading(false);
+      setError("");
+      return;
+    }
+
+    let cancelled = false;
+
+    const parseFile = async () => {
+      try {
+        setLoading(true);
+        setError("");
+        const response = await fetch(fileUrl);
+        if (!response.ok) throw new Error("Could not fetch file");
+        const arrayBuffer = await response.arrayBuffer();
+        const lowerName = String(fileName || fileUrl).toLowerCase();
+
+        let html = "";
+        const isLegacy =
+          lowerName.includes(".csv") ||
+          (lowerName.includes(".xls") && !lowerName.includes(".xlsx"));
+        if (isLegacy) {
+          html = parseWorkbookWithXlsx(arrayBuffer);
+        } else {
+          try {
+            html = await parseWorkbookWithExcelJs(arrayBuffer);
+          } catch {
+            html = parseWorkbookWithXlsx(arrayBuffer);
+          }
+        }
+
+        if (!cancelled) setSheetHtml(html);
+      } catch (err) {
+        if (!cancelled) setError(err.message || "Could not preview spreadsheet.");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    parseFile();
+    return () => {
+      cancelled = true;
+    };
+  }, [fileUrl, fileName, isPdf]);
+
+  return (
+    <div className="smt-excel-preview">
+      <div className="smt-excel-preview__head">
+        <strong className="smt-excel-preview__name">{fileName || (isPdf ? "PDF" : "Spreadsheet")}</strong>
+        {fileUrl ? (
+          <a href={fileUrl} target="_blank" rel="noreferrer" className="smt-excel-preview__link">
+            Open file
+          </a>
+        ) : null}
+      </div>
+
+      {isPdf ? (
+        fileUrl ? (
+          <iframe
+            className="smt-excel-scroll smt-pdf-frame"
+            src={fileUrl}
+            title={fileName || "PDF preview"}
+          />
+        ) : (
+          <div className="smt-excel-preview__msg">No PDF available.</div>
+        )
+      ) : loading ? (
+        <div className="smt-excel-preview__msg">Loading spreadsheet preview…</div>
+      ) : error ? (
+        <div className="smt-excel-preview__msg smt-excel-preview__msg--err">{error}</div>
+      ) : (
+        <div
+          className="smt-excel-scroll"
+          dangerouslySetInnerHTML={{
+            __html: sheetHtml || "<div style='padding:12px;color:#6b7280;'>No spreadsheet data available.</div>",
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function WeeklyPlanReport({ user }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [selectedWeek, setSelectedWeek] = useState("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const data = await api("/ea-meeting/my");
+      const items = Array.isArray(data?.items) ? data.items : [];
+      const weekly = items
+        .filter((row) => row?.plan_submitted_at && row?.source === "ea_meeting")
+        .map((row) => ({
+          id: row.ea_id || String(row.id || "").replace(/^ea:/, ""),
+          week: row.meeting_week_start || row.target_date || "—",
+          week_start: row.meeting_week_start || null,
+          week_end: row.meeting_week_end || row.target_date || null,
+          employee_name: row.employee_name || row.employee_username || "—",
+          employee_username: row.employee_username || "—",
+          employee_role: row.employee_role || row.priority || "—",
+          site: row.employee_site_name || user?.site_name || "—",
+          submitted_at: row.plan_submitted_at,
+          file_1_name: row.attachment_1_name || "File 1",
+          file_1_url: row.attachment_1_url || "",
+          file_2_name: row.attachment_2_name || "File 2",
+          file_2_url: row.attachment_2_url || "",
+        }))
+        .sort((a, b) => new Date(b.submitted_at || 0) - new Date(a.submitted_at || 0));
+      setRows(weekly);
+    } catch (err) {
+      setError(err.message || "Could not load weekly plan submissions.");
+      setRows([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const weekOptions = useMemo(() => {
+    const map = new Map();
+    rows.forEach((row) => {
+      if (!row.week_start) return;
+      map.set(row.week_start, {
+        value: row.week_start,
+        label: `${formatWeekDate(row.week_start)} to ${formatWeekDate(row.week_end || row.week_start)}`,
+      });
+    });
+    return [...map.values()].sort((a, b) => b.value.localeCompare(a.value));
+  }, [rows]);
+
+  const selectedRows = selectedWeek ? rows.filter((row) => row.week_start === selectedWeek) : [];
+
+  const fmt = (ts) => {
+    if (!ts) return "—";
+    try {
+      return new Date(ts).toLocaleString("en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      });
+    } catch {
+      return String(ts);
+    }
+  };
+
+  return (
+    <div className="smt-page smt-page--wide">
+      <div className="smt-head">
+        <div>
+          <h1 className="smt-title">Weekly Plan</h1>
+          <p className="smt-sub">
+            Submitted weekly EM plan files for your site and your own uploads. The table matches the uploaded Excel; click a plan cell to mark it completed.
+          </p>
+        </div>
+        <button type="button" className="smt-refresh" onClick={load} disabled={loading}>
+          {loading ? "Loading…" : "Refresh"}
+        </button>
+      </div>
+
+      {error ? <div className="smt-error">{error}</div> : null}
+
+      <div className="fgroup" style={{ maxWidth: 360, marginBottom: 18 }}>
+        <label className="flabel">Week</label>
+        <select className="finput" value={selectedWeek} onChange={(e) => setSelectedWeek(e.target.value)}>
+          <option value="">Select week</option>
+          {weekOptions.map((week) => (
+            <option key={week.value} value={week.value}>{week.label}</option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="smt-empty">Loading weekly plan submissions…</div>
+      ) : rows.length === 0 ? (
+        <div className="smt-empty">No submitted weekly plans yet for this site.</div>
+      ) : !selectedWeek ? (
+        <div className="smt-empty">Select a week to view the weekly plan.</div>
+      ) : selectedRows.length === 0 ? (
+        <div className="smt-empty">No submitted weekly plans found for this week.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 24, width: "100%", minWidth: 0 }}>
+          {selectedRows.map((r) => (
+            <div key={r.id} className="smt-excel-card">
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 12, alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                <div>
+                  <div style={{ fontSize: 13, color: "#6b7280" }}>Week: <strong>{r.week}</strong></div>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: "#111827" }}>{r.employee_name}</div>
+                  <div style={{ fontSize: 12, color: "#6b7280" }}>{r.employee_role} · {r.site}</div>
+                </div>
+                <div style={{ fontSize: 12, color: "#6b7280" }}>Submitted {fmt(r.submitted_at)}</div>
+              </div>
+
+              {r.file_1_url ? (
+                <WeeklyPlanAttachmentPreview
+                  eaId={r.id}
+                  sourceFile="attachment_1"
+                  fileUrl={r.file_1_url}
+                  fileName={r.file_1_name}
+                  weekStart={r.week_start}
+                  weekEnd={r.week_end}
+                />
+              ) : null}
+
+              {r.file_2_url ? (
+                <div style={{ marginTop: 16 }}>
+                  <WeeklyPlanAttachmentPreview
+                    eaId={r.id}
+                    sourceFile="attachment_2"
+                    fileUrl={r.file_2_url}
+                    fileName={r.file_2_name}
+                    weekStart={r.week_start}
+                    weekEnd={r.week_end}
+                  />
+                </div>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 // Merge a new rejection entry into the existing rejection_reason array (max 2: one per slot)
 export function mergeRejectionReason(existing, slot, by, reason) {
   const arr = Array.isArray(existing) ? existing.filter(r => r.slot !== slot) : [];
@@ -1613,6 +2175,8 @@ export function mergeRejectionReason(existing, slot, by, reason) {
 // MAIN APP
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function SitePortal() {
+  const navigate = useNavigate();
+  const { logout: authLogout, user: authUser } = useAuth();
 const [hoveredNavKey, setHoveredNavKey] = useState(null);
 
 const NAV_COLORS = {
@@ -1625,22 +2189,27 @@ const NAV_COLORS = {
   "wpr-generator": "#db2777",
   "site-report": "#db2777",
   "my-reports": "#16a34a",
-  "weekly-plan": "#0f766e",
-  "my-tasks": "#0f766e",
+  "weekly-plan": "#16a34a",
+  "monthly-report": "#7c3aed",
   "manpower-reports": "#16a34a",
   "report-submissions": "#0891b2",
   "profile": "#bd3c0a",
 };
 
-function SniButton({ itemKey, icon, label, isActive, onClick, badge, style }) {
+function SniButton({ itemKey, icon, label, isActive, isHovered, onEnter, onLeave, onClick, badge, style }) {
+  const highlighted = isActive || isHovered;
   const color = NAV_COLORS[itemKey] || "var(--amber2)";
   return (
     <button
       className={`sni${isActive ? " act" : ""}`}
       onClick={onClick}
+      onMouseEnter={onEnter}
+      onMouseLeave={onLeave}
       style={{
-        "--nav-bg": `${color}18`,
-        "--nav-color": color,
+        background: highlighted ? `${color}18` : undefined,
+        color: highlighted ? color : undefined,
+        overflow: "visible",
+        position: "relative",
         ...style,
       }}
     >
@@ -1652,14 +2221,19 @@ function SniButton({ itemKey, icon, label, isActive, onClick, badge, style }) {
   );
 }
   const [user, setUser] = useState(null);
+  const [userReady, setUserReady] = useState(false);
+  const [visMap, setVisMap] = useState(null);
   const [activeTab, setActiveTab] = useState(() => {
     try {
-      return new URLSearchParams(window.location.search).get("tab") || "clock-in";
+      const t = new URLSearchParams(window.location.search).get("tab");
+      return t || "clock-in";
     } catch {
       return "clock-in";
     }
   });
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth > 999 : true
+  );
   const [expanded, setExpanded] = useState({ leave: true, reports: true });
   const [siteReports, setSiteReports] = useState([]);
   const [loadingReports, setLoadingReports] = useState(false);
@@ -1670,57 +2244,86 @@ function SniButton({ itemKey, icon, label, isActive, onClick, badge, style }) {
   const canSwitchToAdmin = canAccessPortal(user, "admin");
   const checkIsApprover = useCallback(async (u) => {
     if (!u?.user_name) return;
-    const { count } = await supabase
-      .from("leaves")
-      .select("id", { count: "exact", head: true })
-      .or(
-        `level_approver_user_name.eq.${u.user_name},head_approver_user_name.eq.${u.user_name}`,
-      );
+    if (isSiteHead(u) || canApproveSiteLeave(u)) {
+      setIsApprover(true);
+      return;
+    }
+    const uid = u.id;
+    if (uid) {
+      const { data: assigned } = await supabase
+        .from("projects")
+        .select("id")
+        .or(
+          `team_leader_id.eq.${uid},coordinator_id.eq.${uid},site_incharge_id.eq.${uid}`,
+        )
+        .limit(1);
+      if (assigned?.length) {
+        setIsApprover(true);
+        return;
+      }
+    }
+    const { count, error } = await fromMaybe('site_leaves', (q) =>
+      q
+        .select('id', { count: 'exact', head: true })
+        .or(
+          `level_approver_user_name.eq.${u.user_name},head_approver_user_name.eq.${u.user_name}`,
+        )
+    );
+    if (error) {
+      setIsApprover(false);
+      return;
+    }
     setIsApprover((count || 0) > 0);
   }, []);
   const checkApprovalsPending = useCallback(async (u) => {
     if (!u?.user_name) return;
-    const { data } = await supabase
-      .from("leaves")
-      .select(
-        "id, level_approver_user_name, level_approved, head_approver_user_name, head_approved",
-      )
-      .or(
-        `level_approver_user_name.eq.${u.user_name},head_approver_user_name.eq.${u.user_name}`,
+    const sites = await fetchManagedSites(supabase, u);
+    const named = await fromMaybe("site_leaves", (q) =>
+      q
+        .select(
+          "id, site_name, level_approver_user_name, level_approved, head_approver_user_name, head_approved",
+        )
+        .or(
+          `level_approver_user_name.eq.${u.user_name},head_approver_user_name.eq.${u.user_name}`,
+        )
+    );
+    let bySite = { data: [] };
+    if (sites.siteNames.length) {
+      bySite = await fromMaybe("site_leaves", (q) =>
+        q
+          .select(
+            "id, site_name, level_approver_user_name, level_approved, head_approver_user_name, head_approved",
+          )
+          .in("site_name", sites.siteNames)
       );
-    if (!data) return;
-    const count = data.filter(
-      (l) =>
-        (l.level_approver_user_name === u.user_name &&
-          l.level_approved === null) ||
-        (l.head_approver_user_name === u.user_name && l.head_approved === null),
-    ).length;
+    }
+    const merged = [];
+    const seen = new Set();
+    [...(bySite.data || []), ...(named.data || [])].forEach((row) => {
+      if (!row?.id || seen.has(row.id)) return;
+      seen.add(row.id);
+      merged.push(row);
+    });
+    const count = merged.filter((l) => !!leaveActionSlot(l, u, sites)).length;
     setApprovalsPendingCount(count);
   }, []);
 
   const matUnseen = useMaterialUnseenCount(user);
   // Same status-normalization logic used inside MyLeave, kept in sync
-  const leaveStatusKey = (l) => {
-    if (l.level_approved === false || l.head_approved === false)
-      return "rejected";
-    if (l.level_approved === true && l.head_approved === true)
-      return "approved";
-    return "pending";
-  };
+  const leaveStatusKey = (l) => deriveLeaveStatus(l.level_approved, l.head_approved);
 
 const getSeenLeaveStatuses = async (u) => {
   if (!u?.user_name) return {};
-  const { data, error } = await supabase
-    .from("leave_seen_status")
-    .select("snapshot")
-    .eq("user_name", u.user_name)
-    .maybeSingle();
+  const { data, error } = await fromMaybe('leave_seen_status', (q) =>
+    q.select('snapshot').eq('user_name', u.user_name).maybeSingle()
+  );
   if (error || !data) return {};
   return data.snapshot || {};
 };
 
 const setSeenLeaveStatuses = async (u, map) => {
   if (!u?.user_name) return;
+  if (!(await tableExists('leave_seen_status'))) return;
   await supabase
     .from("leave_seen_status")
     .upsert(
@@ -1732,10 +2335,11 @@ const setSeenLeaveStatuses = async (u, map) => {
   // Compares live leave rows against the last-seen snapshot and counts changes
 const checkLeaveUpdates = useCallback(async (u) => {
   if (!u?.user_name) return;
-  const { data } = await supabase
-    .from("leaves")
-    .select("id, level_approved, head_approved")
-    .eq("user_name", u.user_name);
+  const { data } = await fromMaybe('site_leaves', (q) =>
+    q
+      .select('id, level_approved, head_approved')
+      .eq('user_name', u.user_name)
+  );
   if (!data) return;
 
   const seen = await getSeenLeaveStatuses(u); // ← was sync
@@ -1753,10 +2357,11 @@ const checkLeaveUpdates = useCallback(async (u) => {
 
 const markLeavesSeen = useCallback(async (u) => {
   if (!u?.user_name) return;
-  const { data } = await supabase
-    .from("leaves")
-    .select("id, level_approved, head_approved")
-    .eq("user_name", u.user_name);
+  const { data } = await fromMaybe('site_leaves', (q) =>
+    q
+      .select('id, level_approved, head_approved')
+      .eq('user_name', u.user_name)
+  );
   const snapshot = {};
   (data || []).forEach(l => { snapshot[l.id] = leaveStatusKey(l); });
   await setSeenLeaveStatuses(u, snapshot); // ← was sync
@@ -1785,101 +2390,78 @@ const markLeavesSeen = useCallback(async (u) => {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem("user");
-    window.location.href = "/";
+    authLogout();
+    navigate("/login", { replace: true });
   };
   const fetchSiteReports = useCallback(async (u) => {
-    const role = u?.role?.toLowerCase().trim();
-    if (!u || (role !== "project head" && role !== "site incharge")) return;
+    const headUser = { ...u, ...authUser, is_head: !!(u?.is_head || authUser?.is_head) };
+    if (!u || !isSiteHead(headUser)) return;
     setLoadingReports(true);
-
-    const sites =
-      Array.isArray(u.site_names) && u.site_names.length
-        ? u.site_names
-        : u.site_name
-          ? [u.site_name]
-          : [];
-
-    if (!sites.length) {
-      setLoadingReports(false);
-      return;
+    try {
+      const rows = await api("/master/head-reports");
+      setSiteReports(Array.isArray(rows) ? rows : []);
+    } catch {
+      setSiteReports([]);
     }
-
-    // Use case-insensitive comparison by fetching all and filtering client-side
-    const sitesLower = sites.map((s) => s.toLowerCase().trim());
-
-    const { data: dprData } = await supabase
-      .from("dpr_reports")
-      .select(
-        "id, site, engineer, report_type, date, pdf_url, payload, created_at",
-      )
-      .order("created_at", { ascending: false });
-
-    const { data: svrData } = await supabase
-      .from("site_reports")
-      .select(
-        "id, site_name, reporter_name, designation, visit_date, progress_of_work, quality_observations, safety_concerns, issues_concerns, site_visit_instructions, key_instructions, submitted_by_name, pdf_url, created_at",
-      )
-      .order("created_at", { ascending: false });
-
-    const normalized = [
-      ...(dprData || [])
-        .filter(
-          (r) =>
-            sitesLower.includes((r.site || "").toLowerCase().trim()) &&
-            r.report_type !== "morning",
-        )
-        .map((r) => ({ ...r, source: "dpr" })),
-      ...(svrData || [])
-        .filter((r) =>
-          sitesLower.includes((r.site_name || "").toLowerCase().trim()),
-        )
-        .map((r) => ({
-          id: r.id,
-          site: r.site_name,
-          engineer: r.reporter_name,
-          report_type: "site_visit",
-          date: r.visit_date,
-          pdf_url: r.pdf_url,
-          created_at: r.created_at,
-          source: "svr",
-          progress_of_work: r.progress_of_work,
-        })),
-    ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
-
-    setSiteReports(normalized);
     setLoadingReports(false);
-  }, []);
+  }, [authUser]);
 
   useEffect(() => {
-    if (sidebarOpen && window.innerWidth <= 900) {
+    if (sidebarOpen && window.innerWidth <= 768) {
       document.body.style.overflow = "hidden";
-      document.documentElement.style.overflow = "hidden";
+      document.body.style.position = "fixed";
+      document.body.style.width = "100%";
     } else {
       document.body.style.overflow = "";
-      document.documentElement.style.overflow = "";
       document.body.style.position = "";
       document.body.style.width = "";
     }
     return () => {
       document.body.style.overflow = "";
-      document.documentElement.style.overflow = "";
       document.body.style.position = "";
       document.body.style.width = "";
     };
   }, [sidebarOpen]);
 useEffect(() => {
-    const stored = localStorage.getItem("user");
-    if (stored) {
-      const parsed = JSON.parse(stored);
-      setUser(parsed);
+    // Prefer unified TaskFlow session (tf_user), then legacy site `user` key
+    let parsed = null;
+    try {
+      const tf = localStorage.getItem("tf_user");
+      if (tf) {
+        const u = JSON.parse(tf);
+        syncSiteUser(u);
+        parsed = JSON.parse(localStorage.getItem("user") || "null");
+      }
+    } catch { /* ignore */ }
+    if (!parsed) {
+      try {
+        const stored = localStorage.getItem("user");
+        if (stored) parsed = JSON.parse(stored);
+      } catch { /* ignore */ }
+    }
+    if (!parsed) {
+      setUser(null);
+      setUserReady(true);
+      return;
+    }
+    setUser(parsed);
+    setUserReady(true);
       // Re-fetch fresh site data from user_details
       (async () => {
-        const { data } = await supabase
-          .from("user_details")
+        try {
+        const { data, error } = await supabase
+          .from("site_user_details")
           .select("site_name, site_names, department")
           .eq("id", parsed.id)
-          .single();
+          .maybeSingle();
+        if (error) {
+          console.warn("site_user_details refresh failed", error.message);
+          fetchSiteReports(parsed);
+          checkLeaveUpdates(parsed);
+          checkApprovalsPending(parsed);
+          checkIsApprover(parsed);
+          return;
+        }
         if (data) {
           const updated = {
             ...parsed,
@@ -1887,6 +2469,7 @@ useEffect(() => {
             site_names:
               data.site_names ?? (parsed.site_name ? [parsed.site_name] : []),
             department: data.department ?? parsed.department,
+            is_head: parsed.is_head,
           };
           setUser(updated);
           localStorage.setItem("user", JSON.stringify(updated)); // keep localStorage fresh
@@ -1894,26 +2477,50 @@ useEffect(() => {
           checkLeaveUpdates(updated);
           checkApprovalsPending(updated);
           checkIsApprover(updated);
-       
 
           const site = updated.site_names?.[0] || updated.site_name || "";
           if (site) {
-            supabase
-              .from("material_requirements")
-              .select("id", { count: "exact", head: true })
-              .eq("site_name", site)
-              .eq("status", "received");
+            try {
+              await supabase
+                .from("material_requirements")
+                .select("id", { count: "exact", head: true })
+                .eq("site_name", site)
+                .eq("status", "received");
+            } catch { /* table optional */ }
           }
+        } else {
+          fetchSiteReports(parsed);
+          checkLeaveUpdates(parsed);
+          checkApprovalsPending(parsed);
+          checkIsApprover(parsed);
+        }
+        } catch (err) {
+          console.warn("site user refresh error", err);
         }
       })();
-    }
     const onResize = () => {
-      if (window.innerWidth <= 768) setSidebarOpen(false);
+      if (window.innerWidth <= 999) setSidebarOpen(false);
     };
     onResize();
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   }, [fetchSiteReports]);
+
+  useEffect(() => {
+    if (!user) return;
+    const viewer = {
+      ...user,
+      ...authUser,
+      is_head: !!(user.is_head || authUser?.is_head),
+      role: authUser?.role || user.role,
+      designation: authUser?.designation || user.designation,
+      department: authUser?.department || user.department,
+    };
+    if (!isOfficeSiteViewer(viewer)) return;
+    setActiveTab((tab) =>
+      OFFICE_SITE_TABS.has(tab) ? tab : "report-submissions",
+    );
+  }, [user, authUser]);
 
   useEffect(() => {
     if (!user?.user_name) return;
@@ -1925,16 +2532,19 @@ useEffect(() => {
   }, [user, checkLeaveUpdates, checkApprovalsPending]);
 
   const nav = (key) => {
-    setActiveTab(key);
-    try {
-      const url = new URL(window.location.href);
-      url.searchParams.set("tab", key);
-      window.history.replaceState({}, "", url.pathname + url.search);
-    } catch {
-      /* ignore */
+    const viewer = {
+      ...user,
+      ...authUser,
+      is_head: !!(user?.is_head || authUser?.is_head),
+    };
+    if (isOfficeSiteViewer(viewer) && !OFFICE_SITE_TABS.has(key)) {
+      setActiveTab("report-submissions");
+      if (window.innerWidth <= 999) setSidebarOpen(false);
+      return;
     }
+    setActiveTab(key);
     if (key === "my-leave") markLeavesSeen(user);
-    if (window.innerWidth <= 768) setSidebarOpen(false);
+    if (window.innerWidth <= 999) setSidebarOpen(false);
 
     setTimeout(() => {
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1944,19 +2554,60 @@ useEffect(() => {
         mainRef.current.scrollTo({ top: 0, behavior: "smooth" });
     }, 0);
   };
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/master/nav-visibility", {
+          headers: { Authorization: `Bearer ${localStorage.getItem("tf_token") || ""}` },
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!cancelled) setVisMap(data.map || {});
+      } catch {
+        if (!cancelled) setVisMap({});
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (!userReady)
+    return (
+      <div className="loading" style={{ minHeight: "100vh" }}>
+        <div className="spinner" />
+        <span>Loading user…</span>
+      </div>
+    );
+
+  if (!user) return <Navigate to="/login" replace />;
+
+  const navUser = {
+    ...user,
+    id: user.id || authUser?.id,
+    full_name: authUser?.full_name || user.name || user.full_name,
+    username: authUser?.username || user.user_name || user.username,
+    _isApprover: isApprover,
+    is_head: !!(user.is_head || authUser?.is_head),
+    role: authUser?.role || user.role,
+    designation: authUser?.designation || user.designation,
+    department: authUser?.department || user.department,
+  };
+  const NAV = buildNav(navUser, visMap);
+  const ALL_ITEMS = buildAllItems(navUser, visMap);
   const activeItem = ALL_ITEMS.find((i) => i.key === activeTab);
 
-  if (!user)
-    return (
-      <>
-        <div className="loading" style={{ minHeight: "100vh" }}>
-          <div className="spinner" />
-          <span>Loading user…</span>
-        </div>
-      </>
-    );
   const renderContent = () => {
-    switch (activeTab) {
+    const tab =
+      isOfficeSiteViewer(navUser) && !OFFICE_SITE_TABS.has(activeTab)
+        ? "report-submissions"
+        : activeTab;
+    switch (tab) {
+      case "team-chat":
+        return <SiteTeamChat user={user} />;
+      case "ea-attendance":
+        return <EaMeetingReport />;
       case "clock-in":
         return <ClockInOut user={user} supabase={supabase} />;
       case "calendar":
@@ -1966,7 +2617,7 @@ useEffect(() => {
       case "apply-leave":
         return <ApplyLeave user={user} />;
       case "leave-approvals":
-        return <LeaveApprovals user={user} />;
+        return <LeaveApprovals user={{ ...user, id: user.id || authUser?.id }} />;
       case "daily-report":
         return <DPR user={user} />;
       // case "weekly-planning":  return <WeeklyReport user={user}/>;
@@ -1985,8 +2636,6 @@ useEffect(() => {
         return <MyReports user={user} />;
       case "weekly-plan":
         return <WeeklyPlanReport user={user} />;
-      case "my-tasks":
-        return <SiteMyTasks />;
       case "manpower-reports":
         return <ManpowerReport user={user} />;
       case "profile":
@@ -1999,8 +2648,7 @@ useEffect(() => {
           />
         );
       case "report-submissions": {
-        const role = user?.role?.toLowerCase().trim();
-        if (role !== "project head" && role !== "site incharge") return null;
+        if (!isSiteHead(navUser)) return null;
 
         const fmtD = (d) =>
           d
@@ -2022,8 +2670,21 @@ useEffect(() => {
               })
             : "—";
 
+        const ownIds = new Set(
+          [user?.user_name, user?.username, user?.name, user?.full_name, authUser?.username, authUser?.full_name]
+            .map((s) => String(s || "").toLowerCase().trim())
+            .filter(Boolean)
+        );
+        const isOwnSvr = (r) => {
+          if (r.source !== "svr") return false;
+          return [r.engineer, r.reporter_name, r.submitted_by, r.submitted_by_name]
+            .map((s) => String(s || "").toLowerCase().trim())
+            .some((v) => v && ownIds.has(v));
+        };
+        const teamReports = siteReports.filter((r) => !isOwnSvr(r));
+
         // Filter by tab
-        const tabFiltered = siteReports.filter((r) => {
+        const tabFiltered = teamReports.filter((r) => {
           if (reportTab === "dpr")
             return r.source === "dpr" && r.report_type !== "morning";
           if (reportTab === "svr") return r.source === "svr";
@@ -2043,7 +2704,7 @@ useEffect(() => {
         });
 
         const reportSites = [
-          ...new Set(siteReports.map((r) => r.site).filter(Boolean)),
+          ...new Set(teamReports.map((r) => r.site).filter(Boolean)),
         ].sort();
         const withPdf = monthFiltered.filter((r) => r.pdf_url).length;
 
@@ -2090,129 +2751,42 @@ useEffect(() => {
 
         return (
           <div>
-            {/* ── Professional overview banner ── */}
-            <div
-              style={{
-                display: "flex",
-                alignItems: "flex-start",
-                justifyContent: "space-between",
-                gap: 16,
-                flexWrap: "wrap",
-                marginBottom: 20,
-                padding: "18px 22px",
-                borderRadius: 14,
-                background: "linear-gradient(135deg,#0f172a 0%,#1e3a5f 100%)",
-                color: "#fff",
-              }}
-            >
-              <div style={{ minWidth: 200 }}>
-                <div
-                  style={{
-                    fontSize: 10.5,
-                    fontWeight: 800,
-                    letterSpacing: ".12em",
-                    textTransform: "uppercase",
-                    color: "#93c5fd",
-                    marginBottom: 6,
-                  }}
-                >
-                  Project Head Overview
-                </div>
-                <div style={{ fontSize: 19, fontWeight: 700, marginBottom: 5 }}>
-                  Report Submissions
-                </div>
-                <div
-                  style={{
-                    fontSize: 12.5,
-                    color: "var(--ink3)",
-                    lineHeight: 1.6,
-                    maxWidth: 480,
-                  }}
-                >
-                  Daily, weekly and site visit reports submitted across{" "}
-                  <strong style={{ color: "#fff" }}>
-                    {(user?.site_names?.length
-                      ? user.site_names
-                      : user?.site_name
-                        ? [user.site_name]
-                        : []
-                    ).join(", ") || "your sites"}
-                  </strong>
-                  .
-                </div>
+            <div className="head-sub-banner">
+              <div>
+                <div className="head-sub-kicker">Project Head Overview</div>
+                <h3>Report Submissions</h3>
+                <p>
+                  Daily, weekly and site visit reports from your team. Your own
+                  site visit reports are in My Reports.
+                </p>
               </div>
-
-              {/* Quick stat chips */}
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <div className="head-sub-stats">
                 {[
                   {
                     label: "DPR",
-                    count: siteReports.filter((r) => r.source === "dpr").length,
+                    count: teamReports.filter((r) => r.source === "dpr").length,
                     color: "#60a5fa",
                   },
                   {
                     label: "WPR",
-                    count: siteReports.filter((r) => r.source === "wpr").length,
+                    count: teamReports.filter((r) => r.source === "wpr").length,
                     color: "#c4b5fd",
                   },
                   {
                     label: "SVR",
-                    count: siteReports.filter((r) => r.source === "svr").length,
+                    count: teamReports.filter((r) => r.source === "svr").length,
                     color: "#86efac",
                   },
                 ].map((s) => (
-                  <div
-                    key={s.label}
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      minWidth: 64,
-                      padding: "8px 14px",
-                      borderRadius: 10,
-                      background: "rgba(255,255,255,0.06)",
-                      border: "1px solid rgba(255,255,255,0.12)",
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 18,
-                        fontWeight: 800,
-                        fontFamily: "'DM Mono',monospace",
-                        color: s.color,
-                      }}
-                    >
-                      {s.count}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 10,
-                        fontWeight: 700,
-                        letterSpacing: ".08em",
-                        color: "var(--ink3)",
-                        marginTop: 2,
-                      }}
-                    >
-                      {s.label}
-                    </div>
+                  <div key={s.label} className="head-sub-stat">
+                    <b style={{ color: s.color }}>{s.count}</b>
+                    <span>{s.label}</span>
                   </div>
                 ))}
               </div>
             </div>
 
-            {/* ── Tab bar ── */}
-            <div
-              style={{
-                display: "inline-flex",
-                gap: 4,
-                padding: 4,
-                borderRadius: 10,
-                background: "var(--paper)",
-                border: "1px solid var(--line)",
-                marginBottom: 20,
-              }}
-            >
+            <div className="head-sub-tabs">
               {TAB_CONFIG.map((t) => (
                 <button
                   key={t.key}
@@ -2249,7 +2823,7 @@ useEffect(() => {
                       color: reportTab === t.key ? t.color : "#94a3b8",
                     }}
                   >
-                    {siteReports.filter((r) => r.source === t.key).length}
+                    {teamReports.filter((r) => r.source === t.key).length}
                   </span>
                 </button>
               ))}
@@ -2257,7 +2831,7 @@ useEffect(() => {
 
             {/* ── WPR coming soon ── */}
             {reportTab === "wpr" &&
-              siteReports.filter((r) => r.source === "wpr").length === 0 && (
+              teamReports.filter((r) => r.source === "wpr").length === 0 && (
                 <div
                   className="op-empty-state"
                   style={{
@@ -2299,7 +2873,7 @@ useEffect(() => {
               )}
 
             {reportTab !== "wpr" ||
-            siteReports.filter((r) => r.source === "wpr").length > 0 ? (
+            teamReports.filter((r) => r.source === "wpr").length > 0 ? (
               <>
                 {/* ── Filters ── */}
                 <div
@@ -2319,7 +2893,6 @@ useEffect(() => {
                     style={{
                       fontFamily: "'DM Sans',sans-serif",
                       fontSize: 12.5,
-                      color: "#1e293b",
                       background: "var(--surface)",
                       border: "1px solid var(--line2)",
                       color: "var(--ink)",
@@ -2339,7 +2912,6 @@ useEffect(() => {
                       style={{
                         fontFamily: "'DM Sans',sans-serif",
                         fontSize: 12.5,
-                        color: "#1e293b",
                         background: "var(--surface)",
                         border: "1px solid var(--line2)",
                         color: "var(--ink)",
@@ -2799,21 +3371,29 @@ useEffect(() => {
         <Navbar
           onMenuToggle={() => setSidebarOpen((p) => !p)}
           menuOpen={sidebarOpen}
+          onLogout={handleLogout}
           showQrScanner
         />
 
-        <div className={`body${sidebarOpen ? " sidebar-open" : ""}`}>
-          {sidebarOpen && window.innerWidth <= 900 && (
+        <div className="body">
+          {sidebarOpen && window.innerWidth <= 999 && (
             <button
               className="sb-backdrop"
               onClick={() => setSidebarOpen(false)}
+              onTouchMove={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+              }}
+              onTouchStart={(e) => e.stopPropagation()}
               aria-label="Close sidebar"
             />
           )}
 
           {/* Sidebar */}
           <aside
-            className={`sidebar${sidebarOpen ? "" : " closed"}`}
+            className={`site-sidebar${sidebarOpen ? " open" : " closed"}`}
+            onTouchMove={(e) => e.stopPropagation()}
+            onTouchStart={(e) => e.stopPropagation()}
           >
             {canSwitchToAdmin && (
               <div style={{ padding: "14px 14px 0" }}>
@@ -2851,6 +3431,7 @@ useEffect(() => {
                       onEnter={() => setHoveredNavKey(n.key)}
                       onLeave={() => setHoveredNavKey(null)}
                       onClick={() => nav(n.key)}
+                      badge={n.key === "leave-approvals" ? approvalsPendingCount : undefined}
                     />
                   );
                 return (
@@ -2867,9 +3448,7 @@ useEffect(() => {
                       </span>
                     </div>
                     <div className={`sgroup-kids${expanded[n.section] ? "" : " shut"}`}>
-                      {n.children
-                        .filter((c) => c.key !== "leave-approvals" || isApprover)
-                        .map((c) => (
+                      {n.children.map((c) => (
                           <SniButton
                             key={c.key}
                             itemKey={c.key}
@@ -2884,8 +3463,8 @@ useEffect(() => {
                               c.key === "my-leave"
                                 ? leaveBadgeCount
                                 : c.key === "leave-approvals"
-                                ? approvalsPendingCount
-                                : undefined
+                                  ? approvalsPendingCount
+                                  : undefined
                             }
                           />
                         ))}
@@ -2894,19 +3473,7 @@ useEffect(() => {
                 );
               })}
 
-              {(user?.role?.toLowerCase().trim() === "project head" ||
-                user?.role?.toLowerCase().trim() === "site incharge") && (
-                <SniButton
-                  itemKey="report-submissions"
-                  icon={REPORT_SUBMISSIONS_ITEM.icon}
-                  label={REPORT_SUBMISSIONS_ITEM.label}
-                  isActive={activeTab === "report-submissions"}
-                  isHovered={hoveredNavKey === "report-submissions"}
-                  onEnter={() => setHoveredNavKey("report-submissions")}
-                  onLeave={() => setHoveredNavKey(null)}
-                  onClick={() => nav("report-submissions")}
-                />
-              )}
+              {/* Head: Team Submissions + Leave Approvals are in buildNav() */}
             </nav>
 
             {/* Settings pinned to bottom */}
@@ -2937,7 +3504,6 @@ useEffect(() => {
           </main>
         </div>
       </div>
-      <PortalFloaters />
     </>
   );
 }

@@ -1,0 +1,271 @@
+.org-page {
+  padding: 0 0 32px;
+}
+
+.org-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.org-page-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.org-page-ico {
+  background: linear-gradient(135deg, #7c3aed22 0%, #a855f722 100%);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.org-page h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.org-page-title-wrap p {
+  margin: 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.org-pdf-btn {
+  height: 38px;
+  padding: 0 14px;
+  border: none;
+  border-radius: 9px;
+  background: linear-gradient(135deg, #7a2e00, #c96a10);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.org-search {
+  position: relative;
+  margin-bottom: 18px;
+  max-width: 360px;
+}
+
+.org-search svg {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0.4;
+}
+
+.org-search input {
+  width: 100%;
+  padding: 9px 12px 9px 34px;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #334155;
+  background: #fff;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.org-tree-wrap {
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 20px 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.org-tree-empty {
+  text-align: center;
+  padding: 48px 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.org-tree-fit {
+  position: relative;
+  width: max-content;
+  transform-origin: top left;
+  margin: 0 auto;
+}
+
+.org-tree {
+  display: flex;
+  justify-content: center;
+  position: relative;
+  width: max-content;
+}
+
+.org-tree-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  pointer-events: none;
+  overflow: visible;
+  z-index: 0;
+}
+
+.org-line {
+  stroke: #cbd5e1;
+  stroke-width: 1.6;
+}
+
+.org-branch {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  z-index: 1;
+}
+
+.org-branch-children {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 18px;
+  margin-top: 28px;
+  position: relative;
+}
+
+.org-branch-children-peers {
+  flex-wrap: nowrap;
+  gap: 14px;
+}
+
+.org-branch-children-stack {
+  flex-direction: column;
+  align-items: flex-start;
+  padding-left: 28px;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.org-node {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #fff;
+  border: 1.5px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 8px 12px;
+  min-width: 168px;
+  max-width: 220px;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06);
+}
+
+.org-node-root {
+  border-color: #fecaca;
+  background: #fff7f7;
+}
+
+.org-node-d1 {
+  border-color: #ddd6fe;
+}
+
+.org-node-d2 {
+  border-color: #bae6fd;
+}
+
+.org-node-dept {
+  border-style: dashed;
+  background: #f8fafc;
+}
+
+.org-node-group-anchor {
+  width: 1px;
+  height: 1px;
+}
+
+.org-node-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #a855f7);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.org-node-root .org-node-avatar {
+  background: linear-gradient(135deg, #dc2626, #f87171);
+}
+
+.org-node-d1 .org-node-avatar {
+  background: linear-gradient(135deg, #7c3aed, #8b5cf6);
+}
+
+.org-node-d2 .org-node-avatar {
+  background: linear-gradient(135deg, #0284c7, #38bdf8);
+}
+
+.org-node-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.org-node-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: #1e293b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.org-node-meta {
+  font-size: 10px;
+  font-weight: 700;
+  color: #7c3aed;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.org-node-sites {
+  font-size: 10px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@media print {
+  body.org-print-mode * {
+    visibility: hidden;
+  }
+  body.org-print-mode .org-tree-wrap,
+  body.org-print-mode .org-tree-wrap * {
+    visibility: visible;
+  }
+  body.org-print-mode .org-tree-wrap {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+  }
+  .org-page-head,
+  .org-search,
+  .app-navbar,
+  .op-sidebar,
+  .op-toggle-btn {
+    display: none !important;
+  }
+}

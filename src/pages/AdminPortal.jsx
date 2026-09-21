@@ -1,11 +1,15 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Navbar from "../components/Navbar";
+import PortalFloaters from "../components/PortalFloaters";
 import { supabase } from "../supabase";
 import { useRecurringTasks } from "../hooks/useRecurringTasks";
 import SiteReport from "./Sitereport";
 import "./AdminPortal.css";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 
-import { canAccessPortal, filterNav } from "../access.js"; // adjust path to where access.js lives
+import { canAccessPortal, filterNav } from "../access.js";
+import OrgHierarchy from "./OrgHierarchy";
 import {
   TaskForm as TaskFormWithCheckpoints,
   EMPTY_FORM,
@@ -120,14 +124,14 @@ const NAV_ITEMS = [
   {
     key: "reschedule-requests",
     label: "Reschedule Requests",
-    color: "#6366f1",
+    color: "#7c3aed",
     icon: (
       <svg
         width="18"
         height="18"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="#6366f1"
+        stroke="#7c3aed"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -142,14 +146,14 @@ const NAV_ITEMS = [
   {
     key: "add-employee",
     label: "Add Employee",
-    color: "#db2777",
+    color: "#db4086",
     icon: (
       <svg
         width="18"
         height="18"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="#db2777"
+        stroke="#db4086"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -164,14 +168,14 @@ const NAV_ITEMS = [
   {
     key: "manage-employees",
     label: "Manage Employees",
-    color:"#db2777",
+    color:"#db4086",
     icon: (
       <svg
         width="18"
         height="18"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="#db2777"
+        stroke="#db4086"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -186,14 +190,14 @@ const NAV_ITEMS = [
   {
     key: "org-hierarchy",
     label: "Organization Hierarchy",
-    color: "#db2777",
+    color: "#db4086",
     icon: (
       <svg
         width="18"
         height="18"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="#db2777"
+        stroke="#db4086"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -364,8 +368,210 @@ const REPORTS_NAV = [
       </svg>
     ),
   },
+  
 ];
-
+// const INSIGHTS_NAV = [
+//   {
+//     key: "delay-report",
+//     label: "Delay Report",
+//     color: "#dc2626",
+//     icon: (
+//       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#dc2626" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+//         <circle cx="12" cy="12" r="9" />
+//         <path d="M12 7v5l3 2" />
+//       </svg>
+//     ),
+//   },
+//   {
+//     key: "mis-report",
+//     label: "MIS Report",
+//     color: "#7c3aed",
+//     icon: (
+//       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+//         <rect x="3" y="12" width="4" height="9" rx="1" />
+//         <rect x="10" y="7" width="4" height="14" rx="1" />
+//         <rect x="17" y="3" width="4" height="18" rx="1" />
+//       </svg>
+//     ),
+//   },
+//   {
+//     key: "daily-report",
+//     label: "Daily Report",
+//     color: "#0891b2",
+//     icon: (
+//       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0891b2" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+//         <rect x="3" y="4" width="18" height="18" rx="2" />
+//         <line x1="16" y1="2" x2="16" y2="6" />
+//         <line x1="8" y1="2" x2="8" y2="6" />
+//         <line x1="3" y1="10" x2="21" y2="10" />
+//         <path d="M8 14h2M8 18h2M14 14h2M14 18h2" />
+//       </svg>
+//     ),
+//   },
+//   {
+//     key: "work-verification",
+//     label: "Work & Verification",
+//     color: "#16a34a",
+//     icon: (
+//       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+//         <path d="M9 12l2 2 4-4" />
+//         <path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5l7-3z" />
+//       </svg>
+//     ),
+//   },
+//   {
+//     key: "fms-tracker",
+//     label: "FMS Tracker",
+//     color: "#ea580c",
+//     icon: (
+//       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#ea580c" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+//         <path d="M1 3h13v13H1z" />
+//         <path d="M14 8h4l3 3v5h-7V8z" />
+//         <circle cx="5.5" cy="18.5" r="1.5" />
+//         <circle cx="17.5" cy="18.5" r="1.5" />
+//       </svg>
+//     ),
+//   },
+//   {
+//     key: "permissions",
+//     label: "Permissions",
+//     color: "#020202",
+//     icon: (
+//       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#020202" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+//         <rect x="4" y="10" width="16" height="11" rx="2" />
+//         <path d="M8 10V6a4 4 0 0 1 8 0v4" />
+//       </svg>
+//     ),
+//   },
+// ];
+const INSIGHTS_NAV = [
+  {
+    key: "delay-report",
+    label: "Delay Report",
+    color: "#0f766e",
+    icon: (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#0f766e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </svg>
+    ),
+  },
+  {
+    key: "mis-report",
+    label: "MIS Report",
+    color: "#0f766e",
+    icon: (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#0f766e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="12" width="4" height="9" rx="1" />
+        <rect x="10" y="7" width="4" height="14" rx="1" />
+        <rect x="17" y="3" width="4" height="18" rx="1" />
+      </svg>
+    ),
+  },
+  {
+    key: "daily-report",
+    label: "Daily Report",
+    color: "#0f766e",
+    icon: (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#0f766e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <line x1="16" y1="2" x2="16" y2="6" />
+        <line x1="8" y1="2" x2="8" y2="6" />
+        <line x1="3" y1="10" x2="21" y2="10" />
+        <path d="M8 14h2M8 18h2M14 14h2M14 18h2" />
+      </svg>
+    ),
+  },
+  {
+    key: "work-verification",
+    label: "Work & Verification",
+    color: "#0f766e",
+    icon: (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#0f766e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M9 12l2 2 4-4" />
+        <path d="M12 2l7 3v6c0 5-3.5 8.5-7 10-3.5-1.5-7-5-7-10V5l7-3z" />
+      </svg>
+    ),
+  },
+  {
+    key: "fms-tracker",
+    label: "FMS Tracker",
+    color: "#0f766e",
+    icon: (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#0f766e"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <path d="M1 3h13v13H1z" />
+        <path d="M14 8h4l3 3v5h-7V8z" />
+        <circle cx="5.5" cy="18.5" r="1.5" />
+        <circle cx="17.5" cy="18.5" r="1.5" />
+      </svg>
+    ),
+  },
+  {
+    key: "permissions",
+    label: "Permissions",
+    color: "#000000",
+    icon: (
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="#000000"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      >
+        <rect x="4" y="10" width="16" height="11" rx="2" />
+        <path d="M8 10V6a4 4 0 0 1 8 0v4" />
+      </svg>
+    ),
+  },
+];
 const TICKETS_NAV = [
   {
     key: "new-tickets",
@@ -501,6 +707,18 @@ const VERIFICATION_NAV = [
     ),
   },
   {
+    key: "rejected-tasks",
+    label: "Rejected Tasks",
+    color: "#16a34a",
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#16a34a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+      </svg>
+    ),
+  },
+  {
     key: "overdue-tasks",
     label: "Overdue Tasks",
     color: "#16a34a",
@@ -531,7 +749,8 @@ const PRIORITY_STYLES = {
 const STATUS_STYLES = {
   pending: { bg: "#f1f5f9", color: "#64748b" },
   completed: { bg: "#f0fdf4", color: "#16a34a" },
-  not_applicable: { bg: "#f3f4f6", color: "#d61818" },   // ← add
+  not_applicable: { bg: "#f3f4f6", color: "#d61818" },
+  rejected: { bg: "#fef2f2", color: "#dc2626" },
 };
 
 // ← add this block
@@ -810,12 +1029,13 @@ function applyTaskFilters(tasks, filters, verificationMap) {
       if (filters.verification !== vStatus) return false;
     }
     return true;
-    return true;
   });
 }
 
 function getNextDueDate(currentDue, recurrence) {
   const base = currentDue ? new Date(currentDue + "T00:00:00") : new Date();
+  // Guard: if date parsing produced Invalid Date, return null instead of throwing
+  if (isNaN(base.getTime())) return null;
   switch ((recurrence || "").toLowerCase()) {
     case "daily":
       base.setDate(base.getDate() + 1);
@@ -886,7 +1106,305 @@ function toDateStr(d) {
   const dd = String(d.getDate()).padStart(2, "0");
   return `${yyyy}-${mm}-${dd}`;
 }
+const OFFICE_HOURS = { startHour: 9, startMin: 30, endHour: 18, endMin: 30 };
+const LUNCH = { startHour: 13, startMin: 0, endHour: 14, endMin: 0 };
 
+function isWorkingDay(date) {
+  return date.getDay() !== 0; // Mon–Sat, Sunday off
+}
+
+function minutesSinceMidnight(date) {
+  return date.getHours() * 60 + date.getMinutes();
+}
+
+function clampToOfficeWindow(date) {
+  const d = new Date(date);
+  const officeStart = OFFICE_HOURS.startHour * 60 + OFFICE_HOURS.startMin;
+  const officeEnd = OFFICE_HOURS.endHour * 60 + OFFICE_HOURS.endMin;
+  let mins = minutesSinceMidnight(d);
+
+  if (!isWorkingDay(d) || mins >= officeEnd) {
+    // push to next working day's opening time
+    do {
+      d.setDate(d.getDate() + 1);
+    } while (!isWorkingDay(d));
+    d.setHours(OFFICE_HOURS.startHour, OFFICE_HOURS.startMin, 0, 0);
+    return d;
+  }
+  if (mins < officeStart) {
+    d.setHours(OFFICE_HOURS.startHour, OFFICE_HOURS.startMin, 0, 0);
+    return d;
+  }
+  return d;
+}
+
+// Adds `hours` of business time (office hours, skipping lunch, Sundays) to a start Date.
+function addBusinessHours(startDate, hours) {
+  if (!startDate || !hours) return null;
+  let remainingMins = Math.round(hours * 60);
+  let cursor = clampToOfficeWindow(startDate);
+
+  const lunchStart = LUNCH.startHour * 60 + LUNCH.startMin;
+  const lunchEnd = LUNCH.endHour * 60 + LUNCH.endMin;
+  const officeEnd = OFFICE_HOURS.endHour * 60 + OFFICE_HOURS.endMin;
+
+  while (remainingMins > 0) {
+    let curMins = minutesSinceMidnight(cursor);
+    // skip lunch
+    if (curMins >= lunchStart && curMins < lunchEnd) {
+      cursor.setHours(LUNCH.endHour, LUNCH.endMin, 0, 0);
+      curMins = lunchEnd;
+    }
+    const segmentEnd = curMins < lunchStart ? lunchStart : officeEnd;
+    const availableInSegment = segmentEnd - curMins;
+    const take = Math.min(availableInSegment, remainingMins);
+    cursor = new Date(cursor.getTime() + take * 60000);
+    remainingMins -= take;
+
+    if (remainingMins > 0) {
+      cursor = clampToOfficeWindow(cursor);
+    }
+  }
+  return cursor;
+}
+
+function formatDurationShort(mins) {
+  const totalMins = Math.round(Math.abs(mins));
+  const h = Math.floor(totalMins / 60);
+  const m = totalMins % 60;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}
+
+function fmtDT(date) {
+  if (!date) return "—";
+  const d = date instanceof Date ? date : new Date(date);
+  if (isNaN(d)) return "—";
+  return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+function buildDailyReportRows(tasks, fromDate, toDate, userMap) {
+  const todayStr = new Date().toISOString().split("T")[0];
+  const inRange = tasks.filter((t) => t.due_date && t.due_date >= fromDate && t.due_date <= toDate);
+
+  return inRange
+    .slice()
+    .sort((a, b) => new Date(a.due_date) - new Date(b.due_date))
+    .map((t, i) => {
+      const targetDate = t.due_date;
+      const prevDate = t.created_at ? t.created_at.split("T")[0] : targetDate;
+
+      let delayLabel = "Upcoming";
+      let delayStyle = { bg: "#eff6ff", color: "#2563eb" };
+      if (t.status === "completed") {
+        delayLabel = "Completed";
+        delayStyle = { bg: "#f0fdf4", color: "#16a34a" };
+      } else if (targetDate === todayStr) {
+        delayLabel = "Today";
+        delayStyle = { bg: "#fffbeb", color: "#d97706" };
+      } else if (targetDate < todayStr) {
+        const days = Math.floor((new Date(todayStr) - new Date(targetDate)) / 86400000);
+        delayLabel = `${days}d overdue`;
+        delayStyle = { bg: "#fef2f2", color: "#dc2626" };
+      }
+
+      return {
+        sr: i + 1,
+        id: t.id,
+        prevDate,
+        targetDate,
+        title: t.title,
+        description: t.description,
+        siteName: t.site_name,
+        assignee: nameFor(userMap, t.assigned_to),
+        delayLabel,
+        delayStyle,
+      };
+    });
+}
+function buildDelayRow(task, index, userMap) {
+  const assignedAt = task.created_at ? new Date(task.created_at) : null;
+  const acceptedAt = task.accepted_at ? new Date(task.accepted_at) : null;
+  const hoursToComplete = task.hours_to_complete ? parseFloat(task.hours_to_complete) : null;
+
+  // Due = employee's acceptance time + allotted business hours (falls back to assigned time if never accepted)
+  const dueBasis = acceptedAt || assignedAt;
+  const dueDateTime = dueBasis && hoursToComplete ? addBusinessHours(dueBasis, hoursToComplete) : null;
+
+  const submittedAt =
+    task.status === "completed"
+      ? new Date(task.completed_at || task.completion_date || task.updated_at || task.created_at)
+      : null;
+
+  const now = new Date();
+  const isPending = task.status !== "completed";
+  const comparisonPoint = isPending ? now : submittedAt;
+
+  let statusLabel = "N/A";
+  let delayLabel = "—";
+  if (dueDateTime && comparisonPoint) {
+    const diffMins = (comparisonPoint - dueDateTime) / 60000;
+    if (diffMins > 0) {
+      statusLabel = "Delayed";
+      delayLabel = formatDurationShort(diffMins);
+    } else {
+      statusLabel = "On Time";
+      delayLabel = isPending ? "Within deadline" : `${formatDurationShort(diffMins)} early`;
+    }
+  }
+
+  const totalHoldSecs = Number(task.accumulated_seconds) || 0;
+
+  return {
+    sr: index + 1,
+    id: task.id,
+    employee: userMap[task.assigned_to] || task.assigned_to || "—",
+    project: task.site_name || task.title || "—",
+    assignedAt,
+    acceptedAt,
+    hoursToComplete,
+    holdResume: task.is_held ? "On hold" : totalHoldSecs > 0 ? "Resumed" : "—",
+    totalHold: totalHoldSecs > 0 ? formatDurationShort(totalHoldSecs / 60) : "—",
+    dueDateTime,
+    submittedAt,
+    isPending,
+    statusLabel,
+    delayLabel,
+    rescheduleCount: task._rescheduleCount || 0,
+  };
+}
+function getMonthWeeks(monthStr) {
+  // monthStr = "YYYY-MM"
+  const [yearStr, monStr] = monthStr.split("-");
+  const year = parseInt(yearStr, 10);
+  const monthIndex = parseInt(monStr, 10) - 1;
+  const firstDay = new Date(year, monthIndex, 1);
+  const lastDay = new Date(year, monthIndex + 1, 0);
+
+  const dow = firstDay.getDay(); // 0=Sun..6=Sat
+  const daysBack = dow === 0 ? 6 : dow - 1; // back to Monday
+  let cursor = new Date(firstDay);
+  cursor.setDate(cursor.getDate() - daysBack);
+
+  const weeks = [];
+  let weekNum = 1;
+  while (cursor <= lastDay) {
+    const weekStart = new Date(cursor);
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weeks.push({
+      key: `w${weekNum}`,
+      label: `Week ${weekNum}`,
+      from: weekStart,
+      to: weekEnd,
+      includesPrevMonth: weekStart < firstDay,
+      includesNextMonth: weekEnd > lastDay,
+    });
+    cursor = new Date(cursor.getTime());
+    cursor.setDate(cursor.getDate() + 7);
+    weekNum++;
+  }
+  return weeks;
+}
+
+function formatWeekRange(week) {
+  const fmt = (d) => d.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return `${fmt(week.from)} – ${fmt(week.to)}`;
+}
+
+function classifyMisTask(task, todayEnd) {
+  if (normalizeText(task.status) === "not_applicable") return "na";
+  const dueDateTime = task.due_date ? new Date(task.due_date + "T23:59:59") : null;
+  if (task.status === "completed") {
+    const completedAt = task.completed_at || task.completion_date || task.updated_at || null;
+    if (dueDateTime && completedAt && new Date(completedAt) > dueDateTime) return "delayed_done";
+    return "on_time";
+  }
+  if (dueDateTime && todayEnd > dueDateTime) return "delayed";
+  return "pending";
+}
+
+function buildMisWeekStats(tasks, week, taskType) {
+  const todayEnd = new Date();
+  const weekTasks = tasks.filter((t) => {
+    if (!t.due_date) return false;
+    const due = new Date(t.due_date + "T00:00:00");
+    if (due < week.from || due > week.to) return false;
+    if (taskType === "delegated" && t._source !== "task") return false;
+    if (taskType === "recurring" && t._source !== "instance") return false;
+    return true;
+  });
+
+  const byEmployee = new Map();
+  weekTasks.forEach((t) => {
+    const key = t.assigned_to || "unassigned";
+    if (!byEmployee.has(key)) {
+      byEmployee.set(key, {
+        username: key,
+        total: 0, onTime: 0, delayedDone: 0, delayed: 0, pending: 0, na: 0,
+        delegatedCount: 0, recurringCount: 0,
+      });
+    }
+    const b = byEmployee.get(key);
+    b.total += 1;
+    if (t._source === "task") b.delegatedCount += 1;
+    if (t._source === "instance") b.recurringCount += 1;
+    const cls = classifyMisTask(t, todayEnd);
+    if (cls === "on_time") b.onTime += 1;
+    else if (cls === "delayed_done") b.delayedDone += 1;
+    else if (cls === "delayed") b.delayed += 1;
+    else if (cls === "pending") b.pending += 1;
+    else if (cls === "na") b.na += 1;
+  });
+
+  const rows = [...byEmployee.values()].map((b) => {
+    const done = b.onTime + b.delayedDone;
+    const openDenom = b.total - b.na;
+    return {
+      ...b,
+      done,
+      openPct: openDenom > 0 ? ((b.delayed + b.pending) / openDenom) * 100 : 0,
+      onTimePct: done > 0 ? (b.onTime / done) * 100 : null,
+    };
+  });
+
+  return { week, rows };
+}
+
+function computeMisGrand(rows) {
+  const grand = rows.reduce(
+    (acc, r) => {
+      acc.total += r.total;
+      acc.onTime += r.onTime;
+      acc.delayedDone += r.delayedDone;
+      acc.delayed += r.delayed;
+      acc.pending += r.pending;
+      acc.na += r.na;
+      return acc;
+    },
+    { total: 0, onTime: 0, delayedDone: 0, delayed: 0, pending: 0, na: 0 },
+  );
+  const done = grand.onTime + grand.delayedDone;
+  const openDenom = grand.total - grand.na;
+  return {
+    ...grand,
+    done,
+    openPct: openDenom > 0 ? ((grand.delayed + grand.pending) / openDenom) * 100 : 0,
+    onTimePct: done > 0 ? (grand.onTime / done) * 100 : null,
+    employeeCount: rows.length,
+  };
+}
+
+function sortMisRows(rows, sortKey) {
+  const arr = [...rows];
+  switch (sortKey) {
+    case "name_desc": return arr.sort((a, b) => b.name.localeCompare(a.name));
+    case "open_desc": return arr.sort((a, b) => b.openPct - a.openPct);
+    case "total_desc": return arr.sort((a, b) => b.total - a.total);
+    case "name_asc":
+    default: return arr.sort((a, b) => a.name.localeCompare(b.name));
+  }
+}
 function formatNextDue(date) {
   if (!date) return "—";
 
@@ -1057,6 +1575,14 @@ function displayStatus(status) {
   if (status === "not_applicable") return "not_applicable";
   return "pending";
 }
+
+function formatStatus(status) {
+  return displayStatus(status)
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 function SiteFilterBar({
   filters,
   onChange,
@@ -1737,6 +2263,191 @@ function TaskFilterBar({
 
   return <div className="tf-bar tf-bar-fixed">{fields}</div>;
 }
+function MisCountPill({ value, bg, color, icon }) {
+  return (
+    <span
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        minWidth: 26,
+        justifyContent: "center",
+        fontSize: 12,
+        fontWeight: 700,
+        padding: "3px 9px",
+        borderRadius: 20,
+        background: bg,
+        color,
+      }}
+    >
+      {icon}
+      {value}
+    </span>
+  );
+}
+
+function MisWeekCard({ weekData, taskType }) {
+  const { week, rows } = weekData;
+  const grand = computeMisGrand(rows);
+
+  const openColor = (pct) => (pct === 0 ? "#16a34a" : pct < 15 ? "#d97706" : "#dc2626");
+
+  const COLS = "2fr 0.7fr 0.8fr 0.9fr 0.9fr 0.8fr 0.8fr 0.7fr 1.4fr";
+
+  const renderRow = (r, isGrand) => {
+    const oc = openColor(r.openPct);
+    return (
+      <div
+        key={isGrand ? "grand" : r.username}
+        style={{
+          display: "grid",
+          gridTemplateColumns: COLS,
+          alignItems: "center",
+          gap: 10,
+          padding: "14px 20px",
+          background: isGrand ? "#f8fafc" : "#fff",
+          borderTop: isGrand ? "2px solid #e2e8f0" : "1px solid #f1f5f9",
+          fontWeight: isGrand ? 700 : 400,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13.5, color: "#1e293b", fontWeight: 700 }}>
+            {isGrand ? `Grand Total (${grand.employeeCount} employees)` : r.name}
+          </div>
+          {!isGrand && (
+            <>
+              <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>
+                {r.username}
+                {r.department ? ` · ${r.department}` : ""}
+              </div>
+              <div style={{ fontSize: 10.5, color: "#cbd5e1", marginTop: 1 }}>
+                Delegated {r.delegatedCount} · Recurring {r.recurringCount}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <MisCountPill value={r.total} bg="#eff6ff" color="#2563eb" />
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <MisCountPill value={`✓${r.done}`} bg="#f0fdf4" color="#16a34a" />
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+          <MisCountPill value={r.onTime} bg="#f0fdf4" color="#16a34a" />
+          {r.onTimePct != null && (
+            <div style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 3 }}>
+              {r.onTimePct.toFixed(2)}%
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <MisCountPill value={r.delayedDone} bg="#fff7ed" color="#d97706" />
+        </div>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <MisCountPill value={r.delayed} bg="#fef2f2" color="#dc2626" />
+        </div>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <MisCountPill value={r.pending} bg="#fff7ed" color="#d97706" />
+        </div>
+        <div style={{ display: "flex", justifyContent: "center" }}>
+          <MisCountPill value={r.na} bg="#f5f3ff" color="#7c3aed" />
+        </div>
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: oc, textAlign: "right" }}>
+            {r.openPct.toFixed(2)}%
+          </div>
+          <div style={{ width: "100%", height: 5, background: "#e2e8f0", borderRadius: 3, marginTop: 4, overflow: "hidden" }}>
+            <div
+              style={{
+                width: `${Math.min(r.openPct, 100)}%`,
+                height: "100%",
+                background: oc,
+                borderRadius: 3,
+                marginLeft: "auto",
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+      {/* Week header band — softer, less saturated blue */}
+      <div
+        style={{
+          background: "linear-gradient(90deg, #334155, #475569)",
+          color: "#fff",
+          padding: "14px 20px",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          flexWrap: "wrap",
+          gap: 8,
+        }}
+      >
+        <div style={{ fontSize: 14, fontWeight: 700 }}>
+          {week.label} ({formatWeekRange(week)})
+          {week.includesPrevMonth && (
+            <span style={{ fontWeight: 400, fontSize: 12, opacity: 0.75 }}> · includes previous month</span>
+          )}
+          {week.includesNextMonth && (
+            <span style={{ fontWeight: 400, fontSize: 12, opacity: 0.75 }}> · extends into next month</span>
+          )}
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.85 }}>
+          {grand.employeeCount} employee{grand.employeeCount !== 1 ? "s" : ""} · {grand.total} task{grand.total !== 1 ? "s" : ""} · Open {grand.openPct.toFixed(2)}%
+        </div>
+      </div>
+
+      {/* Column headers — real shaded row, aligned to the same grid as data rows */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: COLS,
+          gap: 10,
+          padding: "11px 20px",
+          background: "#f1f5f9",
+          borderBottom: "1px solid #e2e8f0",
+        }}
+      >
+        {["EMPLOYEE", "TOTAL", "DONE", "ON-TIME", "DELAYED DONE", "DELAYED", "PENDING", "N/A", "OPEN % (0=ALL DONE)"].map(
+          (h, i) => (
+            <div
+              key={h}
+              style={{
+                fontSize: 10,
+                fontWeight: 700,
+                color: "#64748b",
+                letterSpacing: ".04em",
+                textAlign: i === 0 ? "left" : i === 8 ? "right" : "center",
+              }}
+            >
+              {h}
+            </div>
+          ),
+        )}
+      </div>
+
+      {rows.length === 0 ? (
+        <div style={{ padding: "24px 20px", textAlign: "center", color: "#94a3b8", fontSize: 13 }}>
+          No {taskType !== "all" ? taskType + " " : ""}tasks due in this week.
+        </div>
+      ) : (
+        <>
+          {rows.map((r) => renderRow(r, false))}
+          {renderRow(grand, true)}
+        </>
+      )}
+    </div>
+  );
+}
 // ── sub-components ─────────────────────────────────────────────────────────
 function StatCard({ label, value, icon, accent }) {
   return (
@@ -1874,7 +2585,7 @@ function TaskRow({
       </td>
       <td className="ap-td">
         <span className="ap-badge" style={{ background: s.bg, color: s.color }}>
-          {displayStatus(task.status)}
+          {formatStatus(task.status)}
         </span>
       </td>
       <td className="ap-td">
@@ -2640,7 +3351,7 @@ function TaskCard({
               className="ap-badge"
               style={{ background: s.bg, color: s.color }}
             >
-              {displayStatus(task.status)}
+              {formatStatus(task.status)}
             </span>
             {task.is_recurring ? (
               <span className="ap-pill-blue">
@@ -2960,7 +3671,7 @@ function VerificationCard({
                 className="ap-badge"
                 style={{ background: s.bg, color: s.color }}
               >
-                {displayStatus(task.status)}
+                {formatStatus(task.status)}
               </span>
             )}
             {task.hours_to_complete && (
@@ -5144,451 +5855,6 @@ function AdminTicketsTable({
     </div>
   );
 }
-// ── Organization Hierarchy ──────────────────────────────────────────────────
-const DEPT_ORDER = ["admin", "project head", "mis head", "mis executive", "engineer office", "site incharge", "site engineer", "site coordinator", "process controller", "junior estimator", "client"];
-
-// ── Org chart tree building blocks ──────────────────────────────────────
-const SITE_ROLE_ORDER = ["project head", "site coordinator", "site incharge", "site engineer"];
-const SITE_ROLE_LABELS = {
-  "project head": "Head",
-  "site coordinator": "Co-ordinator",
-  "site incharge": "Incharge",
-  "site engineer": "Engineer",
-};
-const SITE_ROLE_COLORS = {
-  "project head": "#7c3aed",
-  "site coordinator": "#2563eb",
-  "site incharge": "#0891b2",
-  "site engineer": "#16a34a",
-};
-
-function buildSiteTree(siteName, siteEmployees) {
-  const byRole = {};
-  SITE_ROLE_ORDER.forEach((r) => { byRole[r] = []; });
-  siteEmployees.forEach((emp) => {
-    const r = normalizeText(emp.role);
-    if (byRole[r]) byRole[r].push(emp);
-  });
-
-  const makeNode = (emp, role) => ({
-    id: `${siteName}-${role}-${emp.id || emp.username}`,
-    emp,
-    roleLabel: SITE_ROLE_LABELS[role],
-    color: SITE_ROLE_COLORS[role],
-    children: [],
-  });
-
-  const levels = SITE_ROLE_ORDER
-    .map((role) => byRole[role].map((emp) => makeNode(emp, role)))
-    .filter((arr) => arr.length > 0);
-
-  if (levels.length === 0) return [];
-
-  const root = levels[0][0];
-  const extras = levels[0].slice(1); // other people at the same top level, shown as separate root cards
-
-  let chainTail = root;
-  for (let i = 1; i < levels.length; i++) {
-    chainTail.children = levels[i];
-    chainTail = levels[i][0]; // chain continues through the first person of this level
-  }
-
-  return [root, ...extras];
-}
-
-function buildOfficeTree(officeEmployees) {
-  if (!officeEmployees.length) return [];
-  const isAdmin = (e) => normalizeText(e.role) === "admin";
-  const admins = officeEmployees.filter(isAdmin);
-  const rest = officeEmployees.filter((e) => !isAdmin(e));
-
-  const makeChild = (emp, i) => ({
-    id: `office-emp-${emp.id || emp.username || i}`,
-    emp,
-    roleLabel: toTitleCase(emp.role || "Employee"),
-    color: "#64748b",
-    children: [],
-  });
-
-  if (admins.length === 0) {
-    // No explicit admin — show a virtual "Office" root grouping everyone
-    return [{
-      id: "office-root-virtual",
-      emp: null,
-      virtualLabel: "Office",
-      roleLabel: "Office",
-      color: "#dc2626",
-      children: rest.map(makeChild),
-    }];
-  }
-
-  const [firstAdmin, ...otherAdmins] = admins;
-  const root = {
-    id: `office-admin-${firstAdmin.id || firstAdmin.username}`,
-    emp: firstAdmin,
-    roleLabel: "Office Admin",
-    color: "#dc2626",
-    children: rest.map(makeChild),
-  };
-  const extraAdmins = otherAdmins.map((emp, i) => ({
-    id: `office-admin-extra-${emp.id || emp.username || i}`,
-    emp,
-    roleLabel: "Office Admin",
-    color: "#dc2626",
-    children: [],
-  }));
-  return [root, ...extraAdmins];
-}
-
-function OrgNodeCard({ node }) {
-  const label = node.emp ? (node.emp.name || node.emp.username || "—") : node.virtualLabel;
-  const initials = node.emp
-    ? (node.emp.name || node.emp.username || "?").split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()
-    : "🏢";
-  return (
-    <div
-      style={{
-        display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "center",
-        gap: 6,
-        background: "#fff",
-        border: `1.5px solid ${node.color}55`,
-        borderRadius: 12,
-        padding: "10px 14px",
-        minWidth: 128,
-        boxShadow: "0 1px 4px rgba(0,0,0,.05)",
-      }}
-    >
-      <div
-        style={{
-          width: 36,
-          height: 36,
-          borderRadius: "50%",
-          background: `linear-gradient(135deg, ${node.color}cc, ${node.color}88)`,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 13,
-          fontWeight: 700,
-          color: "#fff",
-          flexShrink: 0,
-        }}
-      >
-        {initials}
-      </div>
-      <div style={{ textAlign: "center" }}>
-        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#1e293b", whiteSpace: "nowrap" }}>
-          {label}
-        </div>
-        <div
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            color: node.color,
-            textTransform: "uppercase",
-            letterSpacing: ".04em",
-            marginTop: 2,
-          }}
-        >
-          {node.roleLabel}
-        </div>
-        {node.emp?.username && (
-          <div style={{ fontSize: 9.5, color: "#94a3b8", marginTop: 1 }}>@{node.emp.username}</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function OrgTreeNode({ node }) {
-  return (
-    <li>
-      <OrgNodeCard node={node} />
-      {node.children?.length > 0 && (
-        <ul>
-          {node.children.map((c) => (
-            <OrgTreeNode key={c.id} node={c} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-}
-
-function OrgTreeChart({ roots }) {
-  if (!roots || roots.length === 0) return null;
-  return (
-    <div className="oh-tree-scroll">
-      <ul className="oh-tree-ul oh-tree-root">
-        {roots.map((r) => (
-          <OrgTreeNode key={r.id} node={r} />
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function OrgHierarchy({ employees = [] }) {
-  const [expandedDepts, setExpandedDepts] = useState({});
-  const [search, setSearch] = useState("");
-
-  const filtered = search.trim()
-    ? employees.filter(
-        (e) =>
-          (e.name || "").toLowerCase().includes(search.toLowerCase()) ||
-          (e.role || "").toLowerCase().includes(search.toLowerCase()) ||
-          (e.department || "").toLowerCase().includes(search.toLowerCase()),
-      )
-    : employees;
-
-  // Group by department, then by role within each department
-  const byDept = useMemo(() => {
-    const map = {};
-    filtered.forEach((emp) => {
-      const dept = (emp.department || "Unassigned").trim();
-      const role = (emp.role || "No Role").trim();
-      if (!map[dept]) map[dept] = {};
-      if (!map[dept][role]) map[dept][role] = [];
-      map[dept][role].push(emp);
-    });
-    return map;
-  }, [filtered]);
-  const deptKeys = Object.keys(byDept).sort((a, b) => {
-    const ai = DEPT_ORDER.indexOf(a.toLowerCase());
-    const bi = DEPT_ORDER.indexOf(b.toLowerCase());
-    if (ai === -1 && bi === -1) return a.localeCompare(b);
-    if (ai === -1) return 1;
-    if (bi === -1) return -1;
-    return ai - bi;
-  });
-
-  const toggleDept = (dept) =>
-    setExpandedDepts((prev) => ({ ...prev, [dept]: !prev[dept] }));
-
-  // Auto-expand all when search changes
-  useEffect(() => {
-    const init = {};
-    deptKeys.forEach((d) => { init[d] = true; });
-    setExpandedDepts(init);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
-
-  const totalCount = filtered.length;
-
-  return (
-    <div style={{ padding: "0 0 32px 0" }}>
-      {/* Header */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 20 }}>
-        <div style={{
-          background: "linear-gradient(135deg, #7c3aed22 0%, #a855f722 100%)",
-          borderRadius: 12,
-          padding: "10px 14px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}>
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#7c3aed" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <rect x="9" y="2" width="6" height="4" rx="1" />
-            <rect x="2" y="18" width="6" height="4" rx="1" />
-            <rect x="9" y="18" width="6" height="4" rx="1" />
-            <rect x="16" y="18" width="6" height="4" rx="1" />
-            <line x1="12" y1="6" x2="12" y2="11" />
-            <line x1="5" y1="18" x2="5" y2="14" />
-            <line x1="12" y1="18" x2="12" y2="14" />
-            <line x1="19" y1="18" x2="19" y2="14" />
-            <line x1="5" y1="14" x2="19" y2="14" />
-          </svg>
-        </div>
-        <div>
-          <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1e293b" }}>Organization Hierarchy</h2>
-          <p style={{ margin: 0, fontSize: 13, color: "#64748b" }}>{totalCount} member{totalCount !== 1 ? "s" : ""} across {deptKeys.length} department{deptKeys.length !== 1 ? "s" : ""}</p>
-        </div>
-      </div>
-
-      {/* Search */}
-      <div style={{ position: "relative", marginBottom: 20, maxWidth: 360 }}>
-        <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#334155" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-        </svg>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, role or department…"
-          style={{
-            width: "100%",
-            paddingLeft: 34,
-            paddingRight: 12,
-            paddingTop: 9,
-            paddingBottom: 9,
-            border: "1.5px solid #e2e8f0",
-            borderRadius: 8,
-            fontSize: 13,
-            color: "#334155",
-            background: "#fff",
-            outline: "none",
-            boxSizing: "border-box",
-          }}
-        />
-      </div>
-
-      {/* Departments */}
-      {deptKeys.length === 0 ? (
-        <div style={{ textAlign: "center", padding: "48px 0", color: "#94a3b8", fontSize: 14 }}>
-          No employees found.
-        </div>
-      ) : (
-        deptKeys.map((dept) => {
-          const roles = byDept[dept];
-          const roleKeys = Object.keys(roles).sort();
-          const deptCount = Object.values(roles).reduce((s, arr) => s + arr.length, 0);
-          const isOpen = expandedDepts[dept] !== false;
-
-          const deptColor = dept.toLowerCase() === "admin" ? "#7c3aed"
-            : dept.toLowerCase().includes("head") ? "#2563eb"
-            : dept.toLowerCase().includes("mis") ? "#0891b2"
-            : dept.toLowerCase().includes("engineer") ? "#16a34a"
-            : dept.toLowerCase().includes("site") ? "#ea580c"
-            : "#64748b";
-
-          return (
-            <div key={dept} style={{
-              marginBottom: 16,
-              border: "1.5px solid #e2e8f0",
-              borderRadius: 12,
-              overflow: "hidden",
-              background: "#fff",
-              boxShadow: "0 1px 4px rgba(0,0,0,0.04)",
-            }}>
-              {/* Dept header */}
-              <button
-                onClick={() => toggleDept(dept)}
-                style={{
-                  width: "100%",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  padding: "13px 16px",
-                  background: `${deptColor}09`,
-                  border: "none",
-                  cursor: "pointer",
-                  borderBottom: isOpen ? `1.5px solid ${deptColor}20` : "none",
-                  gap: 8,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{
-                    width: 10, height: 10, borderRadius: "50%",
-                    background: deptColor, flexShrink: 0,
-                  }} />
-                  <span style={{ fontSize: 14, fontWeight: 700, color: deptColor, textTransform: "capitalize" }}>
-                    {dept}
-                  </span>
-                  <span style={{
-                    background: `${deptColor}18`, color: deptColor,
-                    fontSize: 11, fontWeight: 700, borderRadius: 20,
-                    padding: "2px 8px",
-                  }}>
-                    {deptCount}
-                  </span>
-                </div>
-                <svg
-                  width="16" height="16" viewBox="0 0 24 24" fill="none"
-                  stroke={deptColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-                  style={{ transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}
-                >
-                  <polyline points="6 9 12 15 18 9" />
-                </svg>
-              </button>
-
-              {/* Role groups */}
-              {isOpen && (
-                <div style={{ padding: "12px 16px 16px 16px" }}>
-                  {roleKeys.map((role) => (
-                    <div key={role} style={{ marginBottom: 14 }}>
-                      <div style={{
-                        fontSize: 11, fontWeight: 700, color: "#94a3b8",
-                        textTransform: "uppercase", letterSpacing: "0.06em",
-                        marginBottom: 8, paddingLeft: 2,
-                      }}>
-                        {role} <span style={{ fontWeight: 500 }}>({roles[role].length})</span>
-                      </div>
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {roles[role].map((emp) => {
-                          const sites = emp.site_names?.length
-                            ? emp.site_names
-                            : emp.site_name
-                            ? [emp.site_name]
-                            : [];
-                          const initials = (emp.name || "?")
-                            .split(" ")
-                            .slice(0, 2)
-                            .map((w) => w[0])
-                            .join("")
-                            .toUpperCase();
-                          return (
-                            <div key={emp.id || emp.username} style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 10,
-                              background: "#f8fafc",
-                              border: "1.5px solid #e2e8f0",
-                              borderRadius: 10,
-                              padding: "8px 12px",
-                              minWidth: 200,
-                              flex: "0 1 auto",
-                            }}>
-                              {/* Avatar */}
-                              <div style={{
-                                width: 36, height: 36, borderRadius: "50%",
-                                background: `linear-gradient(135deg, ${deptColor}cc, ${deptColor}88)`,
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                fontSize: 13, fontWeight: 700, color: "#fff", flexShrink: 0,
-                                userSelect: "none",
-                              }}>
-                                {initials}
-                              </div>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: "#1e293b", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                                  {emp.name || emp.username || "—"}
-                                </div>
-                                <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>
-                                  @{emp.username || "—"}
-                                </div>
-                                {sites.length > 0 && (
-                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 3, marginTop: 4 }}>
-                                    {sites.slice(0, 2).map((s) => (
-                                      <span key={s} style={{
-                                        fontSize: 10, background: "#e0f2fe", color: "#0369a1",
-                                        borderRadius: 4, padding: "1px 6px", fontWeight: 600,
-                                        whiteSpace: "nowrap",
-                                      }}>
-                                        {s}
-                                      </span>
-                                    ))}
-                                    {sites.length > 2 && (
-                                      <span style={{ fontSize: 10, color: "#94a3b8" }}>+{sites.length - 2}</span>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })
-      )}
-    </div>
-  );
-}
-
-// ── main component ─────────────────────────────────────────────────────────
 export default function AdminPortal() {
   const [allReschedules, setAllReschedules] = useState([]);
   const [loadingReschedules, setLoadingReschedules] = useState(false);
@@ -5648,6 +5914,7 @@ const [hoveredNavKey, setHoveredNavKey] = useState(null);
   const [reassignModal, setReassignModal] = useState(null); // { task, newAssignee }
   const [rescheduleTaskModal, setRescheduleTaskModal] = useState(null); // { task, newDate }
   const [updatingReassignId, setUpdatingReassignId] = useState(null);
+
   const [updatingRescheduleTaskId, setUpdatingRescheduleTaskId] =
     useState(null);
   const [updatingMarkDoneId, setUpdatingMarkDoneId] = useState(null);
@@ -5868,6 +6135,26 @@ const [loadingDrawings, setLoadingDrawings] = useState(false);
     dateFrom: "",
     dateTo: "",
   });
+  const [misMonth, setMisMonth] = useState(() => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+});
+const [misWeekPill, setMisWeekPill] = useState("all");
+const [misDepartment, setMisDepartment] = useState("");
+const [misTaskType, setMisTaskType] = useState("all");
+const [misSort, setMisSort] = useState("name_asc");
+const [misReportMonth, setMisReportMonth] = useState(null);
+const [misGenerating, setMisGenerating] = useState(false);
+const [dailyReportMode, setDailyReportMode] = useState("single"); // 'single' | 'range'
+const [dailyReportDate, setDailyReportDate] = useState(() => new Date().toISOString().split("T")[0]);
+const [dailyReportFrom, setDailyReportFrom] = useState("");
+const [dailyReportTo, setDailyReportTo] = useState("");
+const [dailyReportRows, setDailyReportRows] = useState(null); // null = not generated yet
+const [dailyReportRemarks, setDailyReportRemarks] = useState({}); // { [taskId]: remarkText }
+  const [delayRange, setDelayRange] = useState("this_month");
+const [delayEmployee, setDelayEmployee] = useState("");
+const [delayReportRows, setDelayReportRows] = useState(null); // null = not generated yet
+const [delayReportMeta, setDelayReportMeta] = useState(null);
   const [visibleTaskCount, setVisibleTaskCount] = useState(30);
   const [visibleOverdueCount, setVisibleOverdueCount] = useState(30);
   const [visiblePendingVerificationCount, setVisiblePendingVerificationCount] =
@@ -6489,15 +6776,25 @@ const handleNavClick = (key) => {
       case "all-drawings":
         fetchDrawings();
         break;
-      case "overdue-tasks": {
+      case "rejected-tasks":
         fetchAllTasks();
-        const ids = overdueTasks.map((t) => t.id);
-        setSeenOverdueIds(ids);
-        localStorage.setItem("seenOverdueTaskIds", JSON.stringify(ids));
-        setVisibleOverdueCount(20);
         break;
-        
-      }
+        case "mis-report":
+          fetchAllTasks();
+          fetchEmployees();
+          break;
+        case "overdue-tasks": {
+          fetchAllTasks();
+          const ids = overdueTasks.map((t) => t.id);
+          setSeenOverdueIds(ids);
+          localStorage.setItem("seenOverdueTaskIds", JSON.stringify(ids));
+          setVisibleOverdueCount(20);
+          break;
+        }
+        case "daily-report":
+          fetchAllTasks();
+          fetchEmployees();
+        break;
       default:
         break;
     }
@@ -6544,7 +6841,307 @@ const fetchDrawings = useCallback(async () => {
   if (!error) setAllDrawings(data || []);
   setLoadingDrawings(false);
 }, []);
+function getRangeDates(rangeKey) {
+  const now = new Date();
+  if (rangeKey === "this_month") {
+    return { from: new Date(now.getFullYear(), now.getMonth(), 1), to: new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59) };
+  }
+  if (rangeKey === "last_month") {
+    return { from: new Date(now.getFullYear(), now.getMonth() - 1, 1), to: new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59) };
+  }
+  return { from: new Date(now.getTime() - 30 * 86400000), to: now };
+}
+const handleGenerateMisReport = async () => {
+  setMisGenerating(true);
+  await fetchAllTasks();
+  await fetchEmployees();
+  setMisReportMonth(misMonth);
+  setMisWeekPill("all");
+  setMisGenerating(false);
+};
 
+const handleExportMisCsv = () => {
+  if (!misReportMonth) return showToast("error", "Generate the report first.");
+  const lines = [[
+    "Week", "Employee", "Username", "Department", "Total", "Done",
+    "On-Time", "On-Time %", "Delayed Done", "Delayed", "Pending", "N/A", "Open %",
+  ].join(",")];
+
+  misVisibleWeeks.forEach((wd) => {
+    wd.rows.forEach((r) => {
+      lines.push([
+        `"${wd.week.label} (${formatWeekRange(wd.week)})"`,
+        `"${r.name}"`,
+        r.username,
+        `"${r.department || ""}"`,
+        r.total, r.done, r.onTime,
+        r.onTimePct != null ? r.onTimePct.toFixed(2) : "",
+        r.delayedDone, r.delayed, r.pending, r.na,
+        r.openPct.toFixed(2),
+      ].join(","));
+    });
+  });
+
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `mis-report-${misReportMonth}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
+
+const handleGenerateDelayReport = () => {
+  const { from, to } = getRangeDates(delayRange);
+  const inRange = allTasks.filter((t) => {
+    if (!t.created_at) return false;
+    const created = new Date(t.created_at);
+    if (created < from || created > to) return false;
+    if (delayEmployee && t.assigned_to !== delayEmployee) return false;
+    return true;
+  });
+  const rows = inRange
+    .slice()
+    .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
+    .map((t, i) => buildDelayRow(t, i, userMap));
+
+  const delayed = rows.filter((r) => r.statusLabel === "Delayed").length;
+  const onTime = rows.filter((r) => r.statusLabel === "On Time").length;
+  const na = rows.filter((r) => r.statusLabel === "N/A").length;
+
+  setDelayReportRows(rows);
+  setDelayReportMeta({ from, to, total: rows.length, delayed, onTime, na });
+};
+
+const handleGenerateDailyReport = () => {
+  const from = dailyReportMode === "single" ? dailyReportDate : dailyReportFrom;
+  const to = dailyReportMode === "single" ? dailyReportDate : dailyReportTo;
+  if (!from || !to) {
+    return showToast("error", `Please select a date${dailyReportMode === "range" ? " range" : ""}.`);
+  }
+  const rows = buildDailyReportRows(allTasks, from, to, userMap);
+  setDailyReportRows(rows);
+};
+
+const handleDailyReportPdf = () => {
+  if (!dailyReportRows) return showToast("error", "Generate the report first.");
+
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 40;
+  const label =
+    dailyReportMode === "single"
+      ? new Date(dailyReportDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+      : `${toDateStr(new Date(dailyReportFrom))} → ${toDateStr(new Date(dailyReportTo))}`;
+
+  doc.setFillColor(30, 41, 59);
+  doc.rect(0, 0, pageWidth, 64, "F");
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Daily Task Report", margin, 30);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(203, 213, 225);
+  doc.text(label, margin, 48);
+
+  autoTable(doc, {
+    startY: 84,
+    margin: { left: margin, right: margin },
+    head: [["SR", "Prev. Date", "Target Date", "Task", "Site", "Assignee", "Status", "Remarks"]],
+    body: dailyReportRows.map((r) => [
+      r.sr,
+      formatSubmissionDate(r.prevDate),
+      formatSubmissionDate(r.targetDate),
+      r.description ? `${r.title} — ${r.description}` : r.title,
+      r.siteName || "—",
+      r.assignee,
+      r.delayLabel,
+      dailyReportRemarks[r.id] || "",
+    ]),
+    theme: "striped",
+    styles: { fontSize: 8, cellPadding: 6, lineColor: [226, 232, 240], lineWidth: 0.5, textColor: [51, 65, 85] },
+    headStyles: { fillColor: [30, 41, 59], textColor: 255, fontStyle: "bold", fontSize: 8 },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 26, halign: "center" },
+      3: { cellWidth: 180 },
+      6: { cellWidth: 70, fontStyle: "bold" },
+    },
+  });
+
+  doc.save(`daily-report-${dailyReportMode === "single" ? dailyReportDate : `${dailyReportFrom}_to_${dailyReportTo}`}.pdf`);
+};
+
+const handleDelayReportPdf = () => {
+  if (!delayReportRows || !delayReportMeta) {
+    return showToast("error", "Generate the report first.");
+  }
+
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const s = delayReportMeta;
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const margin = 40;
+
+  // ── Header band ──────────────────────────────────────────────
+  doc.setFillColor(30, 41, 59); // slate-800
+  doc.rect(0, 0, pageWidth, 64, "F");
+
+  doc.setTextColor(255, 255, 255);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text("Task Delay Report", margin, 30);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9.5);
+  doc.setTextColor(203, 213, 225); // slate-300
+  doc.text(
+    `${toDateStr(s.from)}  →  ${toDateStr(s.to)}`,
+    margin,
+    48,
+  );
+
+  const generatedLabel = `Generated ${new Date().toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`;
+  doc.setFontSize(8.5);
+  doc.text(generatedLabel, pageWidth - margin, 48, { align: "right" });
+
+  // ── Summary stat chips ───────────────────────────────────────
+  const chips = [
+    { label: "Total Tasks", value: s.total, color: [37, 99, 235] },
+    { label: "Delayed", value: s.delayed, color: [220, 38, 38] },
+    { label: "On Time", value: s.onTime, color: [22, 163, 74] },
+    { label: "N/A", value: s.na, color: [100, 116, 139] },
+  ];
+  const chipW = 130;
+  const chipH = 34;
+  const chipGap = 12;
+  let chipX = margin;
+  const chipY = 78;
+
+  chips.forEach((c) => {
+    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(248, 250, 252);
+    doc.roundedRect(chipX, chipY, chipW, chipH, 4, 4, "FD");
+
+    doc.setFontSize(7.5);
+    doc.setFont("helvetica", "normal");
+    doc.setTextColor(100, 116, 139);
+    doc.text(c.label.toUpperCase(), chipX + 10, chipY + 13);
+
+    doc.setFontSize(14);
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(c.color[0], c.color[1], c.color[2]);
+    doc.text(String(c.value), chipX + 10, chipY + 27);
+
+    chipX += chipW + chipGap;
+  });
+
+  // ── Table ────────────────────────────────────────────────────
+  const statusColors = {
+    Delayed: [220, 38, 38],
+    "On Time": [22, 163, 74],
+    "N/A": [148, 163, 184],
+  };
+
+  autoTable(doc, {
+    startY: chipY + chipH + 20,
+    margin: { left: margin, right: margin },
+    head: [[
+      "SR", "Employee", "Project", "Assigned",
+      "Accepted", "Hrs", "Hold/Resume",
+      "Total Hold", "Due", "Submitted", "Status", "Delay",
+    ]],
+    body: delayReportRows.map((r) => [
+      r.sr,
+      r.employee,
+      r.project,
+      fmtDT(r.assignedAt),
+      fmtDT(r.acceptedAt),
+      r.hoursToComplete ? `+${r.hoursToComplete}h` : "—",
+      r.holdResume,
+      r.totalHold,
+      fmtDT(r.dueDateTime),
+      r.submittedAt ? fmtDT(r.submittedAt) : "Pending",
+      r.statusLabel,
+      r.delayLabel,
+    ]),
+    theme: "striped",
+    styles: {
+      fontSize: 8,
+      cellPadding: { top: 6, bottom: 6, left: 6, right: 6 },
+      lineColor: [226, 232, 240],
+      lineWidth: 0.5,
+      valign: "middle",
+      textColor: [51, 65, 85],
+    },
+    headStyles: {
+      fillColor: [30, 41, 59],
+      textColor: 255,
+      fontStyle: "bold",
+      fontSize: 8,
+      halign: "left",
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    columnStyles: {
+      0: { cellWidth: 26, halign: "center", fontStyle: "bold", textColor: [37, 99, 235] },
+      1: { cellWidth: 78, fontStyle: "bold" },
+      2: { cellWidth: 78 },
+      3: { cellWidth: 68 },
+      4: { cellWidth: 68 },
+      5: { cellWidth: 34, halign: "center" },
+      6: { cellWidth: 54 },
+      7: { cellWidth: 48, halign: "center" },
+      8: { cellWidth: 68 },
+      9: { cellWidth: 78 },
+      10: { cellWidth: 52, halign: "center", fontStyle: "bold" },
+      11: { cellWidth: 66 },
+    },
+    didParseCell: (data) => {
+      if (data.section === "body" && data.column.index === 10) {
+        const color = statusColors[data.cell.raw];
+        if (color) {
+          data.cell.styles.textColor = color;
+          data.cell.styles.fontStyle = "bold";
+        }
+      }
+      if (data.section === "body" && data.column.index === 9 && data.cell.raw === "Pending") {
+        data.cell.styles.textColor = [37, 99, 235];
+        data.cell.styles.fontStyle = "italic";
+      }
+    },
+    didDrawPage: (data) => {
+      // Footer: page number + branding
+      const pageCount = doc.internal.getNumberOfPages();
+      const pageNum = doc.internal.getCurrentPageInfo().pageNumber;
+      doc.setFontSize(8);
+      doc.setTextColor(148, 163, 184);
+      doc.text(
+        `Page ${pageNum} of ${pageCount}`,
+        pageWidth - margin,
+        doc.internal.pageSize.getHeight() - 16,
+        { align: "right" },
+      );
+      doc.text(
+        "Task Delay Report",
+        margin,
+        doc.internal.pageSize.getHeight() - 16,
+      );
+    },
+  });
+
+  const rangeLabel = delayRange.replace(/_/g, "-");
+  doc.save(`task-delay-report-${rangeLabel}-${toDateStr(new Date())}.pdf`);
+};
+
+const handleSendDelayWA = () => {
+  showToast("error", "WhatsApp sending isn't configured yet — connect a WhatsApp API integration to enable this.");
+};
 const handleDrawingSubmit = async () => {
   if (!drawingForm.site_name) return showToast("error", "Please select a site.");
   if (!drawingForm.files.length)
@@ -6917,6 +7514,14 @@ const handleRejectTask = async (task) => {
   showToast("success", "Task rejected and removed.");
 };
 
+const handleClearRejection = async (task) => {
+  const table = task._source === "instance" ? "recurring_task_instances" : "tasks";
+  const { error } = await supabase.from(table).update({ status: "pending", employee_rejection_reason: null }).eq("id", task.id);
+  if (error) return showToast("error", "Failed: " + error.message);
+  setAllTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, status: "pending", employee_rejection_reason: null } : t)));
+  showToast("success", `"${task.title}" reopened as pending.`);
+};
+
 const handleDelete = async (id) => {
   if (!window.confirm("Delete this task?")) return;
   const task = allTasks.find((t) => t.id === id);
@@ -7229,6 +7834,7 @@ if (!error && verification.task_id) {
   const activeItem = [
     ...NAV_ITEMS,
     ...REPORTS_NAV,
+    ...INSIGHTS_NAV,
     ...VERIFICATION_NAV,
     ...TICKETS_NAV,
   ].find((n) => n.key === activeTab);
@@ -7238,8 +7844,14 @@ if (!error && verification.task_id) {
   const completed = allTasks.filter((t) => t.status === "completed").length;
 
   const todayStr = new Date().toISOString().split("T")[0];
+  const rejectedTasks = allTasks.filter((t) => t.status === "rejected");
   const overdueTasks = allTasks.filter(
-    (t) => t.due_date && t.due_date < todayStr && t.status !== "completed",
+    (t) =>
+      t.due_date &&
+      t.due_date < todayStr &&
+      t.status !== "completed" &&
+      t._source !== "instance" &&
+      !t.recurring_task_id,
   );
   const unseenOverdueCount = overdueTasks.filter(
     (t) => !seenOverdueIds.includes(t.id),
@@ -7300,7 +7912,29 @@ if (!error && verification.task_id) {
     ...taskFilters,
     assignedTo: "",
   });
+const employeeByUsername = new Map(employees.map((e) => [e.username, e]));
+const misWeeksAll = misReportMonth ? getMonthWeeks(misReportMonth) : [];
+const misWeeklyDataRaw = misReportMonth
+  ? misWeeksAll.map((week) => buildMisWeekStats(allTasks, week, misTaskType))
+  : [];
 
+const misWeeklyData = misWeeklyDataRaw.map((wd) => ({
+  week: wd.week,
+  rows: sortMisRows(
+    wd.rows
+      .map((r) => {
+        const emp = employeeByUsername.get(r.username);
+        return { ...r, name: emp?.name || r.username, department: emp?.department || "" };
+      })
+      .filter((r) => !misDepartment || normalizeText(r.department) === normalizeText(misDepartment)),
+    misSort,
+  ),
+}));
+
+const misVisibleWeeks =
+  misWeekPill === "all" ? misWeeklyData : misWeeklyData.filter((wd) => wd.week.key === misWeekPill);
+
+const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filter(Boolean))].sort();
   const tfSites = [
     ...new Set(tasksForSites.map((t) => t.site_name).filter(Boolean)),
   ].sort();
@@ -9018,7 +9652,7 @@ if (!error && verification.task_id) {
 
       case "org-hierarchy":
         return (
-          <OrgHierarchy employees={employees} />
+          <OrgHierarchy employees={employees} sites={sites} />
         );
 
       case "add-site":
@@ -9146,7 +9780,7 @@ if (!error && verification.task_id) {
                   onChange={handleSiteFormChange}
                   placeholder="e.g. Acme Corp"
                 />
-              </div>
+              </div>  
             </div>
             <div className="ap-form-row ap-col-2">
               <div className="ap-field">
@@ -9701,6 +10335,431 @@ if (!error && verification.task_id) {
       case "site-report":
         return <SiteReport user={user} />;
 
+      case "daily-report": {
+  const dr = dailyReportRows;
+  return (
+    <div>
+      <div style={{ marginBottom: 4 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1e293b" }}>Daily Report</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#64748b" }}>
+          Task status snapshot for a single day or a custom date range, ready to review or export.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", margin: "18px 0" }}>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>
+            Range Type
+          </label>
+          <div className="ap-recurrence-pills" style={{ margin: 0 }}>
+            <button
+              type="button"
+              className={`ap-rpill${dailyReportMode === "single" ? " Active" : ""}`}
+              onClick={() => setDailyReportMode("single")}
+            >
+              Single Day
+            </button>
+            <button
+              type="button"
+              className={`ap-rpill${dailyReportMode === "range" ? " Active" : ""}`}
+              onClick={() => setDailyReportMode("range")}
+            >
+              Date Range
+            </button>
+          </div>
+        </div>
+
+        {dailyReportMode === "single" ? (
+          <div>
+            <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>
+              Date
+            </label>
+            <input
+              className="ap-input"
+              type="date"
+              value={dailyReportDate}
+              onChange={(e) => setDailyReportDate(e.target.value)}
+              style={{ minWidth: 160 }}
+            />
+          </div>
+        ) : (
+          <>
+            <div>
+              <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>
+                From
+              </label>
+              <input className="ap-input" type="date" value={dailyReportFrom} onChange={(e) => setDailyReportFrom(e.target.value)} style={{ minWidth: 150 }} />
+            </div>
+            <div>
+              <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>
+                To
+              </label>
+              <input className="ap-input" type="date" min={dailyReportFrom} value={dailyReportTo} onChange={(e) => setDailyReportTo(e.target.value)} style={{ minWidth: 150 }} />
+            </div>
+          </>
+        )}
+
+        <button className="ap-btn-primary" onClick={handleGenerateDailyReport}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+          </svg>
+          Generate
+        </button>
+        {dr && (
+          <button className="ap-btn-secondary" onClick={handleDailyReportPdf}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            Download PDF
+          </button>
+        )}
+      </div>
+
+      {!dr ? (
+        <div className="op-empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>
+            <rect x="3" y="4" width="18" height="18" rx="2" /><line x1="16" y1="2" x2="16" y2="6" /><line x1="8" y1="2" x2="8" y2="6" /><line x1="3" y1="10" x2="21" y2="10" />
+          </svg>
+          <p className="op-empty-text">Choose a date {dailyReportMode === "range" ? "range" : ""} and click Generate to build the report.</p>
+        </div>
+      ) : dr.length === 0 ? (
+        <div className="op-empty-state">
+          <p className="op-empty-text">No tasks are due in this period.</p>
+        </div>
+      ) : (
+        <>
+          <div className="ap-leave-summary ap-leave-summary-tight">
+            <div style={{ background: "#eff6ff", borderColor: "#bfdbfe" }}>
+              <span>Total Tasks</span>
+              <strong style={{ color: "#2563eb" }}>{dr.length}</strong>
+            </div>
+            <div style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+              <span>Overdue</span>
+              <strong style={{ color: "#dc2626" }}>{dr.filter((r) => r.delayLabel.includes("overdue")).length}</strong>
+            </div>
+            <div style={{ background: "#fffbeb", borderColor: "#fde68a" }}>
+              <span>Due Today</span>
+              <strong style={{ color: "#d97706" }}>{dr.filter((r) => r.delayLabel === "Today").length}</strong>
+            </div>
+            <div style={{ background: "#f0fdf4", borderColor: "#bbf7d0" }}>
+              <span>Completed</span>
+              <strong style={{ color: "#16a34a" }}>{dr.filter((r) => r.delayLabel === "Completed").length}</strong>
+            </div>
+          </div>
+
+          <div className="ap-table-wrap">
+            <table className="ap-table">
+              <thead>
+                <tr>
+                  {["SR", "Prev. Date", "Target Date", "Task", "Site", "Assignee", "Status", "Remarks"].map((h) => (
+                    <th key={h} className="ap-th">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dr.map((r) => (
+                  <tr key={r.id} className="ap-tr">
+                    <td className="ap-td" style={{ color: "#94a3b8" }}>{r.sr}</td>
+                    <td className="ap-td">{formatSubmissionDate(r.prevDate)}</td>
+                    <td className="ap-td">{formatSubmissionDate(r.targetDate)}</td>
+                    <td className="ap-td ap-td-title">
+                      {r.title}
+                      {r.description && <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>{r.description}</div>}
+                    </td>
+                    <td className="ap-td">{r.siteName || "—"}</td>
+                    <td className="ap-td">{r.assignee}</td>
+                    <td className="ap-td">
+                      <span className="ap-badge" style={{ background: r.delayStyle.bg, color: r.delayStyle.color, fontWeight: 700 }}>
+                        {r.delayLabel}
+                      </span>
+                    </td>
+                    <td className="ap-td" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        className="ap-input"
+                        placeholder="Add remark…"
+                        style={{ fontSize: 12, padding: "5px 8px" }}
+                        value={dailyReportRemarks[r.id] || ""}
+                        onChange={(e) => setDailyReportRemarks((p) => ({ ...p, [r.id]: e.target.value }))}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+      case "work-verification":
+      case "fms-tracker":
+        return (
+          <div className="op-empty-state">
+            <p className="op-empty-text">
+              {activeItem?.label} isn't built yet — this section is a placeholder.
+            </p>
+          </div>
+        );
+
+      case "permissions":
+        return (
+          <div className="op-empty-state">
+            <p className="op-empty-text">
+              Permissions isn't built yet — this section is a placeholder.
+            </p>
+          </div>
+        );
+
+      case "delay-report": {
+      const s = delayReportMeta;
+  return (
+    <div>
+      <div style={{ marginBottom: 4 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1e293b" }}>Task Delay Report</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#64748b" }}>
+          Employee-wise assigned → accept → deadline → submit. Deadline uses office hours (9:30–6:30, lunch 1–2, Mon–Sat).
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", margin: "18px 0" }}>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Range</label>
+          <select className="ap-input ap-select" value={delayRange} onChange={(e) => setDelayRange(e.target.value)} style={{ minWidth: 150 }}>
+            <option value="this_month">This month</option>
+            <option value="last_month">Last month</option>
+            <option value="last_30">Last 30 days</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Employee</label>
+          <select className="ap-input ap-select" value={delayEmployee} onChange={(e) => setDelayEmployee(e.target.value)} style={{ minWidth: 180 }}>
+            <option value="">All employees</option>
+            {employees.map((e) => (
+              <option key={e.username} value={e.username}>{e.name}</option>
+            ))}
+          </select>
+        </div>
+        <button className="ap-btn-primary" onClick={handleGenerateDelayReport}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+          </svg>
+          Generate
+        </button>
+        {delayReportRows && (
+          <>
+            <button className="ap-btn-secondary" onClick={handleDelayReportPdf}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              PDF
+            </button>
+          <button className="ap-btn-secondary" onClick={handleSendDelayWA}>
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path d="M20.52 3.48A11.86 11.86 0 0 0 12.08 0C5.53 0 .2 5.33.2 11.88c0 2.09.55 4.13 1.59 5.93L.1 24l6.34-1.66a11.9 11.9 0 0 0 5.64 1.43h.01c6.55 0 11.88-5.33 11.88-11.88 0-3.18-1.24-6.16-3.45-8.41ZM12.09 21.8h-.01a9.9 9.9 0 0 1-5.05-1.38l-.36-.21-3.76.98 1-3.66-.23-.38a9.88 9.88 0 1 1 8.41 4.65Zm5.42-7.4c-.3-.15-1.77-.87-2.05-.97-.27-.1-.47-.15-.67.15-.2.3-.77.97-.95 1.17-.17.2-.35.22-.65.07-.3-.15-1.26-.46-2.4-1.48-.89-.79-1.49-1.77-1.66-2.07-.17-.3-.02-.46.13-.61.14-.14.3-.35.45-.52.15-.17.2-.3.3-.5.1-.2.05-.37-.02-.52-.07-.15-.67-1.62-.92-2.22-.24-.58-.49-.5-.67-.51h-.57c-.2 0-.52.07-.8.37-.27.3-1.04 1.02-1.04 2.49s1.07 2.89 1.22 3.09c.15.2 2.1 3.21 5.09 4.5.71.31 1.26.49 1.69.63.71.23 1.35.2 1.86.12.57-.09 1.77-.72 2.02-1.42.25-.7.25-1.3.17-1.42-.07-.12-.27-.2-.57-.35Z" />
+            </svg>
+            Send on WhatsApp
+          </button>
+          </>
+        )}
+      </div>
+
+      {!delayReportRows ? (
+        <div className="op-empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>
+            <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" />
+          </svg>
+          <p className="op-empty-text">Choose a range and click Generate to build the report.</p>
+        </div>
+      ) : delayReportRows.length === 0 ? (
+        <div className="op-empty-state">
+          <p className="op-empty-text">No tasks were assigned in this period.</p>
+        </div>
+      ) : (
+        <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+          <div style={{ padding: "18px 22px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e293b" }}>Task Delay Report</div>
+            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+              {toDateStr(s.from)} → {toDateStr(s.to)} · {s.total} task{s.total !== 1 ? "s" : ""} ·{" "}
+              <span style={{ color: "#dc2626", fontWeight: 700 }}>{s.delayed} delayed</span> ·{" "}
+              <span style={{ color: "#16a34a", fontWeight: 700 }}>{s.onTime} on time</span> ·{" "}
+              {s.na} N/A
+            </div>
+          </div>
+
+          <div className="ap-table-wrap">
+            <table className="ap-table">
+              <thead>
+                <tr style={{ background: "#1e293b" }}>
+                  {["SR", "Employee", "Project", "Timestamp (Assigned)", "Emp Acceptance Time", "Hrs to Complete", "Hold / Resume", "Total Hold", "Due", "Submitted", "Status", "Delay"].map((h) => (
+                    <th key={h} className="ap-th" style={{ color: "#fff", background: "#1e293b" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {delayReportRows.map((r) => (
+                  <tr key={r.id} className="ap-tr">
+                    <td className="ap-td" style={{ color: "#2563eb", fontWeight: 700 }}>{r.sr}</td>
+                    <td className="ap-td ap-td-title">{r.employee}</td>
+                    <td className="ap-td">{r.project}</td>
+                    <td className="ap-td">{fmtDT(r.assignedAt)}</td>
+                    <td className="ap-td">{fmtDT(r.acceptedAt)}</td>
+                    <td className="ap-td">{r.hoursToComplete ? `+${r.hoursToComplete}h` : "—"}</td>
+                    <td className="ap-td">{r.holdResume}</td>
+                    <td className="ap-td">{r.totalHold}</td>
+                    <td className="ap-td">{fmtDT(r.dueDateTime)}</td>
+                    <td className="ap-td">
+                      {r.submittedAt ? fmtDT(r.submittedAt) : <span style={{ color: "#2563eb" }}>Not submitted (Pending)</span>}
+                    </td>
+                    <td className="ap-td">
+                      <span className="ap-badge" style={{
+                        background: r.statusLabel === "Delayed" ? "#fef2f2" : r.statusLabel === "On Time" ? "#f0fdf4" : "#f1f5f9",
+                        color: r.statusLabel === "Delayed" ? "#dc2626" : r.statusLabel === "On Time" ? "#16a34a" : "#64748b",
+                        fontWeight: 700,
+                      }}>
+                        {r.statusLabel}
+                      </span>
+                    </td>
+                    <td className="ap-td" style={{ fontWeight: 600 }}>{r.delayLabel}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+case "mis-report":
+  return (
+    <div>
+      <div style={{ marginBottom: 4 }}>
+        <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "#1e293b" }}>MIS Report</h2>
+        <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#64748b" }}>
+          Week-wise performance. Filter by Delegated or Recurring tasks. Week 1 can include previous-month days.
+        </p>
+      </div>
+
+      <div style={{ display: "flex", gap: 14, alignItems: "flex-end", flexWrap: "wrap", margin: "18px 0" }}>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Month</label>
+          <input
+            type="month"
+            className="ap-input"
+            value={misMonth}
+            onChange={(e) => setMisMonth(e.target.value)}
+            style={{ minWidth: 160 }}
+          />
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Week</label>
+          <select className="ap-input ap-select" value={misWeekPill} onChange={(e) => setMisWeekPill(e.target.value)} style={{ minWidth: 140 }}>
+            <option value="all">All weeks</option>
+            {misWeeksAll.map((w) => (
+              <option key={w.key} value={w.key}>
+                {w.label}{w.includesPrevMonth ? " +prev" : ""}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Department</label>
+          <select className="ap-input ap-select" value={misDepartment} onChange={(e) => setMisDepartment(e.target.value)} style={{ minWidth: 160 }}>
+            <option value="">All departments</option>
+            {misDepartmentOptions.map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Task Type</label>
+          <select className="ap-input ap-select" value={misTaskType} onChange={(e) => setMisTaskType(e.target.value)} style={{ minWidth: 140 }}>
+            <option value="all">All tasks</option>
+            <option value="delegated">Delegated</option>
+            <option value="recurring">Recurring</option>
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Sort</label>
+          <select className="ap-input ap-select" value={misSort} onChange={(e) => setMisSort(e.target.value)} style={{ minWidth: 140 }}>
+            <option value="name_asc">Name A–Z</option>
+            <option value="name_desc">Name Z–A</option>
+            <option value="open_desc">Open % (High→Low)</option>
+            <option value="total_desc">Total (High→Low)</option>
+          </select>
+        </div>
+        <button className="ap-btn-primary" onClick={handleGenerateMisReport} disabled={misGenerating}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" />
+          </svg>
+          {misGenerating ? "Generating…" : "Generate"}
+        </button>
+        {misReportMonth && (
+          <button className="ap-btn-secondary" onClick={handleExportMisCsv}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+            </svg>
+            CSV
+          </button>
+        )}
+      </div>
+
+      {!misReportMonth ? (
+        <div className="op-empty-state">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>
+            <rect x="3" y="12" width="4" height="9" rx="1" /><rect x="10" y="7" width="4" height="14" rx="1" /><rect x="17" y="3" width="4" height="18" rx="1" />
+          </svg>
+          <p className="op-empty-text">Choose a month and click Generate to build the report.</p>
+        </div>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            <span
+              style={{
+                fontSize: 11.5, fontWeight: 600, color: "#64748b", background: "#f1f5f9",
+                border: "1px solid #e2e8f0", borderRadius: 20, padding: "4px 12px",
+              }}
+            >
+              Showing: <strong style={{ color: "#1e293b" }}>
+                {misTaskType === "all" ? "All tasks" : misTaskType === "delegated" ? "Delegated tasks" : "Recurring tasks"}
+              </strong>
+            </span>
+
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <button
+                onClick={() => setMisWeekPill("all")}
+                className={misWeekPill === "all" ? "ap-rpill Active" : "ap-rpill"}
+                style={{ borderRadius: 20 }}
+              >
+                All weeks
+              </button>
+              {misWeeksAll.map((w) => (
+                <button
+                  key={w.key}
+                  onClick={() => setMisWeekPill(w.key)}
+                  className={misWeekPill === w.key ? "ap-rpill Active" : "ap-rpill"}
+                  style={{ borderRadius: 20 }}
+                >
+                  {w.label.replace("Week ", "W")}{w.includesPrevMonth ? " +prev" : ""}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {misVisibleWeeks.map((wd) => (
+            <MisWeekCard key={wd.week.key} weekData={wd} taskType={misTaskType} />
+          ))}
+        </>
+      )}
+    </div>
+  );
       case "my-reports":
         if (loadingSvrReports)
           return (
@@ -10192,6 +11251,98 @@ if (!error && verification.task_id) {
           </>
         );
 
+        case "rejected-tasks":
+  return rejectedTasks.length === 0 ? (
+    <div className="op-empty-state">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.3 }}>
+        <circle cx="12" cy="12" r="10" />
+        <line x1="15" y1="9" x2="9" y2="15" />
+        <line x1="9" y1="9" x2="15" y2="15" />
+      </svg>
+      <p className="op-empty-text">No tasks have been rejected by employees.</p>
+    </div>
+  ) : (
+    <>
+      <p className="tf-count">
+        {rejectedTasks.length} task{rejectedTasks.length !== 1 ? "s" : ""} rejected by employees
+      </p>
+      <div className="ap-table-wrap">
+        <table className="ap-table">
+          <thead>
+            <tr>
+              {["Title", "Rejected By", "Site", "Reason", "Rejected On", "Action"].map((h) => (
+                <th key={h} className="ap-th">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rejectedTasks.map((t) => (
+              <tr key={t.id} className="ap-tr" onClick={() => setDetailTask(t)} style={{ cursor: "pointer" }}>
+                <td className="ap-td ap-td-title">{t.title}</td>
+                <td className="ap-td">{nameFor(userMap, t.rejected_by || t.assigned_to)}</td>
+                <td className="ap-td">{t.site_name || "—"}</td>
+                <td className="ap-td" style={{ maxWidth: 240 }}>
+                  <span style={{ fontSize: 12.5, color: "#64748b" }}>{t.employee_rejection_reason || "—"}</span>
+                </td>
+                <td className="ap-td">
+                  {t.rejected_at
+                    ? new Date(t.rejected_at).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+                    : "—"}
+                </td>
+                <td className="ap-td" onClick={(e) => e.stopPropagation()}>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <button
+                      className="ap-btn-approve"
+                      style={{ padding: "5px 10px", fontSize: 11.5 }}
+                      onClick={() => openReassignModal(t)}
+                    >
+                      Reassign
+                    </button>
+                    <button
+                      className="ap-btn-secondary"
+                      style={{ padding: "5px 10px", fontSize: 11.5 }}
+                      onClick={() => handleClearRejection(t)}
+                    >
+                      Reopen
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="ap-task-mobile-grid">
+        {rejectedTasks.map((t) => (
+          <div key={t.id} className="ap-task-card-mobile" onClick={() => setDetailTask(t)} style={{ cursor: "pointer" }}>
+            <div className="ap-task-card-head">
+              <div>
+                <div className="ap-task-card-title">{t.title}</div>
+                <div className="ap-task-card-sub">{nameFor(userMap, t.rejected_by || t.assigned_to)} · {t.site_name || "No site"}</div>
+              </div>
+              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: "#fef2f2", color: "#dc2626" }}>
+                Rejected
+              </span>
+            </div>
+            {t.employee_rejection_reason && (
+              <div style={{ fontSize: 12.5, color: "#64748b", background: "#f8fafc", borderRadius: 6, padding: "8px 10px", borderLeft: "3px solid #fecaca" }}>
+                {t.employee_rejection_reason}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8 }}>
+              <button className="ap-btn-approve" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); openReassignModal(t); }}>
+                Reassign
+              </button>
+              <button className="ap-btn-secondary" style={{ flex: 1 }} onClick={(e) => { e.stopPropagation(); handleClearRejection(t); }}>
+                Reopen
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
+  );
       case "overdue-tasks":
         return overdueTasks.length === 0 ? (
           <div className="op-empty-state">
@@ -10933,6 +12084,9 @@ case "all-drawings":
                     {item.key === "pending-verification" && verificationsPending.length > 0 && (
                       <span className="op-nav-badge">{verificationsPending.length}</span>
                     )}
+                    {item.key === "rejected-tasks" && rejectedTasks.length > 0 && (
+                      <span className="op-nav-badge">{rejectedTasks.length}</span>
+                    )}
                     {item.key === "overdue-tasks" && unseenOverdueCount > 0 && (
                       <span className="op-nav-badge">{unseenOverdueCount}</span>
                     )}
@@ -11037,6 +12191,30 @@ case "all-drawings":
                   </button>
                 );
               })}
+
+              <span className="op-nav-section">Insights & Compliance</span>
+              {filterNav(INSIGHTS_NAV, user, "admin").map((item) => {
+                const isActive = activeTab === item.key;
+                const isHovered = hoveredNavKey === item.key;
+                const highlighted = isActive || isHovered;
+                return (
+                  <button
+                    key={item.key}
+                    className={`op-nav-item${isActive ? " Active" : ""}`}
+                    onClick={() => handleNavClick(item.key)}
+                    onMouseEnter={() => setHoveredNavKey(item.key)}
+                    onMouseLeave={() => setHoveredNavKey(null)}
+                    style={{
+                      background: highlighted ? `${item.color}18` : undefined,
+                      color: highlighted ? item.color : undefined,
+                      transition: "background .12s, color .12s",
+                    }}
+                  >
+                    <span className="op-nav-icon">{item.icon}</span>
+                    {item.label}
+                  </button>
+                );
+              })}              
             </nav>
           </aside>
 
@@ -11256,6 +12434,7 @@ case "all-drawings":
           </main>
         </div>
         {/* FAB — dashboard and all-tasks tabs */}
+        <PortalFloaters />
         {(activeTab === "dashboard" || activeTab === "all-tasks") && (
           <button
             className="ap-fab"

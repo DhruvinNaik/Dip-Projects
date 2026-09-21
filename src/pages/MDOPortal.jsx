@@ -1,12 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Navbar from "../components/Navbar";
+import PortalFloaters from "../components/PortalFloaters";
 import "./SitePortal.css";
 import MonthEndReport from "./MonthEndReport.jsx";
 //   npm install jspdf jspdf-autotable
 import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 import EmployeeAttendanceReport from "./EmployeeAttendanceReport.jsx";
+import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
+import "./SiteMyTasks.css";
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://efqfjfthsleymhljswcq.supabase.co";
@@ -198,6 +201,21 @@ monthEnd: (
     <polyline points="8 15 11 18 16 13" />
   </svg>
 ),
+
+  weeklyPlan: (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="#0f766e"
+      strokeWidth="2"
+      strokeLinecap="round"
+    >
+      <rect x="2" y="2" width="20" height="20" rx="2" />
+      <path d="M7 12h2l2-4 2 8 2-4h2" />
+    </svg>
+  ),
 
   addDrawing: (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -1101,6 +1119,7 @@ const NAV = [
    { key: "emp-report", label: "Employee Report", icon: Ico.empReport },
   { key: "dpr", label: "Daily Report (DPR)", icon: Ico.dpr },
   { key: "month-end-report", label: "Month End Report", icon: Ico.monthEnd },
+  { key: "weekly-plan", label: "Weekly Plan", icon: Ico.weeklyPlan },
   { key: "add-drawings", label: "Add Drawings", icon: Ico.addDrawing },
   { key: "all-drawings", label: "All Drawings", icon: Ico.allDrawings },
   { key: "apply-leave", label: "Apply Leave", icon: Ico.apply },
@@ -1114,6 +1133,7 @@ const NAV_COLORS = {
   "emp-report": "#2563eb",
   dpr: "#16a34a",
    "month-end-report": "#16a34a",
+  "weekly-plan": "#0f766e",
   "apply-leave": "#7c3aed",
   "my-leave": "#7c3aed",
   "proxy-request": "#eb2727",
@@ -1885,6 +1905,8 @@ useEffect(() => {
               <DprSheetReport sites={sites} />
             ) : activeTab === "month-end-report" ? (
               <MonthEndReport user={user} supabase={supabase} />
+            ) : activeTab === "weekly-plan" ? (
+              <WeeklyPlanReport user={user} mdo />
             ) : activeTab === "add-drawings" ? (
               <AddDrawings
                 sites={allSites}
@@ -1909,6 +1931,7 @@ useEffect(() => {
           </div>
         </main>
       </div>
+      <PortalFloaters />
     </div>
   );
 }

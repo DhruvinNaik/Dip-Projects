@@ -4019,6 +4019,7 @@ function SubmitOverlay({ currentStep, detail }) {
   );
 }
 
+
 // ─── MAIN FORM ────────────────────────────────────────────────────────────────
 function DprForm({ user }) {
   const [reportType, setReportType] = useState("morning");
@@ -4199,6 +4200,24 @@ function DprForm({ user }) {
     })();
   }, [user]);
 
+  
+// function WprForm({user}){
+//   const [date, setDate] = useState(todayStr());
+//   const [draft, setDraft] = useState(null);
+
+//   const draftOpenedRef = useRef(false);
+//   const autoSaveTimerRef = useRef(null);
+//   const summaryRef = useRef(null);
+
+//   useEfect(() => {
+//     if(sites.length === 1 && !site){
+//     setSite(sites[0]);  
+//     return null;
+//     }
+//     setUserSites(sites);
+//     setLadingSites(false);
+//   })
+// }
 const handlePlanningKeyDown = (e) => {
   if (e.key !== "Enter" && e.key !== "Backspace") return;
   const textarea = e.target;

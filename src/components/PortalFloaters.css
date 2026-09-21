@@ -497,6 +497,10 @@
   padding: 14px 12px 10px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  background: #ebf0f5;
+}
+
+.pf-body.pf-wm {
   background-color: #ebf0f5;
   background-image:
     linear-gradient(rgba(235, 240, 245, 0.88), rgba(235, 240, 245, 0.88)),

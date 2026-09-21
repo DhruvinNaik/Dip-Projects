@@ -523,7 +523,7 @@ function DipPanel({ user, onClose }) {
           <Ico name="close" />
         </button>
       </div>
-      <div className="pf-body" ref={bodyRef}>
+      <div className="pf-body pf-wm" ref={bodyRef}>
         {messages.map((m, i) => (
           <div key={i} className={`pf-msg ${m.role === "user" ? "pf-msg-user" : ""}`}>
             <div className={`pf-bubble ${m.role === "user" ? "pf-bubble-user" : "pf-bubble-bot"}`}>
@@ -1958,7 +1958,7 @@ function ChatPanel({
         </>
       ) : (
         <>
-          <div className="pf-body pf-scroll-chat" ref={bodyRef}>
+          <div className="pf-body pf-scroll-chat pf-wm" ref={bodyRef}>
             {missingTable && (
               <div className="pf-setup">
                 Chat needs a one-time database setup. Run{" "}

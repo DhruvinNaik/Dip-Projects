@@ -157,6 +157,73 @@ function usePanelSize(storageKey) {
   return { size, onResizeStart };
 }
 
+/** Pin floating panels to the visible area above the mobile keyboard (WhatsApp-like). */
+function useMobileViewportLock() {
+  const [vvStyle, setVvStyle] = useState(null);
+
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const apply = () => {
+      const mobile = window.matchMedia("(max-width: 760px)").matches;
+      const vv = window.visualViewport;
+      if (!mobile || !vv) {
+        setVvStyle(null);
+        return;
+      }
+      const keyboardOpen = window.innerHeight - vv.height > 60;
+      if (!keyboardOpen) {
+        setVvStyle(null);
+        return;
+      }
+      setVvStyle({
+        top: `${Math.max(0, vv.offsetTop)}px`,
+        left: `${Math.max(0, vv.offsetLeft)}px`,
+        right: "auto",
+        bottom: "auto",
+        width: `${vv.width}px`,
+        height: `${vv.height}px`,
+        maxHeight: `${vv.height}px`,
+        borderRadius: "0",
+      });
+    };
+
+    apply();
+    const vv = window.visualViewport;
+    vv?.addEventListener("resize", apply);
+    vv?.addEventListener("scroll", apply);
+    window.addEventListener("resize", apply);
+    window.addEventListener("orientationchange", apply);
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      vv?.removeEventListener("resize", apply);
+      vv?.removeEventListener("scroll", apply);
+      window.removeEventListener("resize", apply);
+      window.removeEventListener("orientationchange", apply);
+    };
+  }, []);
+
+  return vvStyle;
+}
+
+/** Scroll only the message list — never the page/header (unlike scrollIntoView). */
+function scrollBodyToEnd(bodyEl) {
+  if (!bodyEl) return;
+  if (bodyEl.scrollHeight <= bodyEl.clientHeight + 8) return;
+  bodyEl.scrollTop = bodyEl.scrollHeight;
+}
+
+/** Stop the browser from scrolling the page when the composer is focused. */
+function holdWindowScroll() {
+  const x = window.scrollX;
+  const y = window.scrollY;
+  requestAnimationFrame(() => {
+    window.scrollTo(x, y);
+    requestAnimationFrame(() => window.scrollTo(x, y));
+  });
+}
+
 function formatChatTime(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -207,12 +274,13 @@ function SeenTicks({ seen, light }) {
 
 function ResizablePanel({ storageKey, label, children }) {
   const { size, onResizeStart } = usePanelSize(storageKey);
+  const vvStyle = useMobileViewportLock();
   return (
     <div
-      className="pf-panel"
+      className={`pf-panel${vvStyle ? " is-keyboard" : ""}`}
       role="dialog"
       aria-label={label}
-      style={{ width: size.w, height: size.h }}
+      style={{ width: size.w, height: size.h, ...(vvStyle || {}) }}
     >
       <button
         type="button"
@@ -387,10 +455,10 @@ function DipPanel({ user, onClose }) {
   ]);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-  const endRef = useRef(null);
+  const bodyRef = useRef(null);
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollBodyToEnd(bodyRef.current);
   }, [messages, busy]);
 
   const send = async (value) => {
@@ -425,7 +493,7 @@ function DipPanel({ user, onClose }) {
           <Ico name="close" />
         </button>
       </div>
-      <div className="pf-body">
+      <div className="pf-body" ref={bodyRef}>
         {messages.map((m, i) => (
           <div key={i} className={`pf-msg ${m.role === "user" ? "pf-msg-user" : ""}`}>
             <div className={`pf-bubble ${m.role === "user" ? "pf-bubble-user" : "pf-bubble-bot"}`}>
@@ -454,7 +522,6 @@ function DipPanel({ user, onClose }) {
             </div>
           </div>
         )}
-        <div ref={endRef} />
       </div>
       <form
         className="pf-composer"
@@ -467,8 +534,10 @@ function DipPanel({ user, onClose }) {
           className="pf-input"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
+          onFocus={holdWindowScroll}
           placeholder="Ask DIP Bot…"
           autoFocus
+          enterKeyHint="send"
         />
         <button className="pf-send" disabled={busy || !draft.trim()} aria-label="Send">
           <Ico name="send" />
@@ -507,13 +576,13 @@ function ChatPanel({
   const [groupName, setGroupName] = useState("");
   const [pickedUsers, setPickedUsers] = useState({});
   const [groupSaving, setGroupSaving] = useState(false);
-  const endRef = useRef(null);
+  const bodyRef = useRef(null);
   const peerRef = useRef(null);
   const membersScrollRef = useRef(null);
   peerRef.current = peer;
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" });
+    scrollBodyToEnd(bodyRef.current);
   }, [messages, peer]);
 
   const loadPeople = useCallback(async () => {
@@ -1859,7 +1928,7 @@ function ChatPanel({
         </>
       ) : (
         <>
-          <div className="pf-body pf-scroll-chat">
+          <div className="pf-body pf-scroll-chat" ref={bodyRef}>
             {missingTable && (
               <div className="pf-setup">
                 Chat needs a one-time database setup. Run{" "}
@@ -1904,7 +1973,6 @@ function ChatPanel({
                 </div>
               );
             })}
-            <div ref={endRef} />
           </div>
           <form
             className="pf-composer"
@@ -1917,7 +1985,9 @@ function ChatPanel({
               className="pf-input"
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
+              onFocus={holdWindowScroll}
               placeholder={`Message ${peer.name || peer.username}…`}
+              enterKeyHint="send"
             />
             <button
               className="pf-send chat"

@@ -90,6 +90,8 @@
   flex-direction: column;
   overflow: hidden;
   border: 1px solid #e2e8f0;
+  overscroll-behavior: contain;
+  touch-action: manipulation;
 }
 
 .pf-resize {
@@ -493,6 +495,8 @@
   overflow-y: auto;
   background: #ebf0f5;
   padding: 14px 12px 10px;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pf-empty {
@@ -649,7 +653,7 @@
 .pf-composer {
   display: flex;
   gap: 8px;
-  padding: 10px 12px 12px;
+  padding: 10px 12px calc(12px + env(safe-area-inset-bottom, 0px));
   border-top: 1px solid #e2e8f0;
   background: #fff;
   flex-shrink: 0;
@@ -1003,9 +1007,19 @@
     right: 0;
     left: 0;
     bottom: 0;
-    width: 100% !important;
-    height: min(86vh, 680px) !important;
+    width: 100%;
+    height: min(86vh, 680px);
+    max-height: 100dvh;
     border-radius: 16px 16px 0 0;
+  }
+
+  .pf-panel.is-keyboard {
+    /* size/position set from visualViewport in JS */
+    max-height: none;
+  }
+
+  .pf-input {
+    font-size: 16px; /* avoid iOS zoom-on-focus which shifts the panel */
   }
 
   .pf-resize {

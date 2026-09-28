@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabase";
 
 const TYPE_STORE = "hr_asset_types";
@@ -42,6 +42,65 @@ function usernameOf(employee) {
 
 function statusClass(status) {
   return String(status || "available").toLowerCase().replace(/\s+/g, "-");
+}
+
+function StatusPicker({ value, label, onChange }) {
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const buttonRef = useRef(null);
+  const current = value || "Available";
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = (event) => {
+      if (buttonRef.current?.contains(event.target)) return;
+      if (event.target?.closest?.(".hra-status-menu")) return;
+      setOpen(false);
+    };
+    const onScroll = () => setOpen(false);
+    document.addEventListener("mousedown", close);
+    window.addEventListener("scroll", onScroll, true);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      window.removeEventListener("scroll", onScroll, true);
+    };
+  }, [open]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        type="button"
+        className={`hra-status is-${statusClass(current)}`}
+        aria-label={label}
+        aria-expanded={open}
+        onClick={() => {
+          const rect = buttonRef.current?.getBoundingClientRect();
+          if (rect) setPos({ top: rect.bottom + 4, left: rect.left });
+          setOpen((prev) => !prev);
+        }}
+      >
+        {current}
+      </button>
+      {open && (
+        <div className="hra-status-menu" style={{ top: pos.top, left: pos.left }}>
+          {STATUSES.map((item) => (
+            <button
+              key={item}
+              type="button"
+              className={`hra-status-opt is-${statusClass(item)}${item === current ? " is-current" : ""}`}
+              onClick={() => {
+                setOpen(false);
+                onChange(item);
+              }}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+      )}
+    </>
+  );
 }
 
 function Svg({ name, size = 16 }) {
@@ -216,6 +275,18 @@ export default function HrAssets({ employees = [], search = "" }) {
     setOpen(true);
   };
 
+  const changeStatus = async (row, status) => {
+    if (!row?.id || status === row.status) return;
+    setRows((prev) => prev.map((item) => (item.id === row.id ? { ...item, status } : item)));
+    const { error: updErr } = await supabase.from("hr_assets").update({ status }).eq("id", row.id);
+    if (updErr) {
+      setRows((prev) => prev.map((item) => (item.id === row.id ? { ...item, status: row.status } : item)));
+      setError(updErr.message || "Could not update status.");
+      return;
+    }
+    showToast("Status updated");
+  };
+
   const resolvedType = () => {
     if (form.asset_type !== "Other") return form.asset_type.trim();
     return form.custom_type.trim();
@@ -319,7 +390,11 @@ export default function HrAssets({ employees = [], search = "" }) {
                   <td>{row.condition || "—"}</td>
                   <td>{inr(row.purchase_value)}</td>
                   <td>
-                    <span className={`hra-status is-${statusClass(row.status)}`}>{row.status || "Available"}</span>
+                    <StatusPicker
+                      value={row.status || "Available"}
+                      label={`Change status for ${row.asset_name || "asset"}`}
+                      onChange={(status) => changeStatus(row, status)}
+                    />
                   </td>
                   <td>
                     <button type="button" className="hra-edit" onClick={() => openEdit(row)}>

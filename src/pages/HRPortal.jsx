@@ -8,6 +8,7 @@ import EmployeeDetailModal from "./EmployeeDetailModal";
 import HrDocuments from "./HrDocuments";
 import HrInsurance, { daysUntilRenewal, renewalStatus } from "./HrInsurance";
 import HrExpenses from "./HrExpenses";
+import HrAssets from "./HrAssets";
 import "./HRPortal.css";
 
 const MENU = [
@@ -1549,6 +1550,11 @@ export default function HRPortal() {
               </div>
               <div className="hr-tracker-note"><span className="hr-tracker-dot approved" /> Only approved leaves are included in Used. Each leave period is counted by calendar days, including Sundays.</div>
             </>
+          ) : activeItem === "Assets" ? (
+            <HrAssets
+              employees={overview?.users || []}
+              search={search}
+            />
           ) : activeItem === "Expenses" ? (
             <HrExpenses
               employees={overview?.users || []}

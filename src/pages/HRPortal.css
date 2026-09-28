@@ -2583,10 +2583,39 @@
   color: #475569;
   border: 1px solid #e2e8f0;
 }
+.hra-status { cursor: pointer; }
 .hra-status.is-assigned { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
 .hra-status.is-available { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
 .hra-status.is-under-repair { background: #fef3c7; color: #b45309; border-color: #fde68a; }
 .hra-status.is-retired { background: #f1f5f9; color: #64748b; border-color: #e2e8f0; }
+.hra-status-menu {
+  position: fixed;
+  z-index: 80;
+  min-width: 148px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+  padding: 4px;
+}
+.hra-status-opt {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: #fff;
+  border: none;
+  border-radius: 7px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hra-status-opt.is-assigned { color: #1d4ed8; }
+.hra-status-opt.is-available { color: #15803d; }
+.hra-status-opt.is-under-repair { color: #b45309; }
+.hra-status-opt.is-retired { color: #64748b; }
+.hra-status-opt:hover,
+.hra-status-opt.is-current { background: #f8fafc; }
 .hra-edit,
 .hra-cancel {
   display: inline-flex;

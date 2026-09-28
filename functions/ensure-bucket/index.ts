@@ -21,7 +21,8 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { site } = await req.json();
+    const body = await req.json();
+    const { site, remove, list } = body;
     if (!site || typeof site !== "string" || !site.trim()) {
       return new Response(
         JSON.stringify({ error: "Missing or invalid 'site' in request body." }),
@@ -41,6 +42,37 @@ Deno.serve(async (req) => {
       .getBucket(bucketName);
 
     if (existing && !getErr) {
+      if (typeof list === "string" && list.trim()) {
+        const { data: files, error: listError } = await supabaseAdmin.storage
+          .from(bucketName)
+          .list(list, { limit: 1000 });
+        if (listError) {
+          return new Response(
+            JSON.stringify({ error: `Failed to list files: ${listError.message}` }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ bucket: bucketName, created: false, files: files || [] }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
+      if (Array.isArray(remove) && remove.length) {
+        const paths = remove.filter((path) => typeof path === "string" && path.trim());
+        const { error: removeError } = await supabaseAdmin.storage.from(bucketName).remove(paths);
+        if (removeError) {
+          return new Response(
+            JSON.stringify({ error: `Failed to remove files: ${removeError.message}` }),
+            { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
+          JSON.stringify({ bucket: bucketName, created: false, removed: paths.length }),
+          { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+        );
+      }
+
       return new Response(
         JSON.stringify({ bucket: bucketName, created: false }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }

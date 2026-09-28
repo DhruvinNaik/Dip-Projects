@@ -354,7 +354,7 @@ async function loadHrContext() {
         .order("date", { ascending: false })
         .limit(5000),
       supabase.from("expenses").select("*").order("created_at", { ascending: false }).limit(300),
-      supabase.from("documents").select("*").order("created_at", { ascending: false }).limit(300),
+      supabase.from("hr_documents").select("*").order("created_at", { ascending: false }).limit(300),
     ]);
 
   hrCache = {

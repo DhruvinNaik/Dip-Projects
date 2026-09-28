@@ -2356,23 +2356,54 @@ const displayReportNo = zp(reportNum);
     setTimeout(() => setToast(null), ms);
   };
 
+  // Site-wise report number: shared across all engineers on the same site.
+  // Week 1 (any eng) → 1, Week 2 (any eng) → 2, etc.
   const fetchReportNum = useCallback(
-    async (siteName, date) => {
-      if (!siteName || !date || !supabase) return;
+    async (siteName, date, engineerName) => {
+      if (!siteName || !date || !supabase) return 1;
+
+      const dateFormatted = new Date(date + "T00:00:00").toLocaleDateString(
+        "en-IN",
+        { day: "2-digit", month: "long", year: "numeric" },
+      );
+
+      // Re-submit of same site+engineer+date keeps the existing number (override)
+      if (engineerName) {
+        const { data: existing } = await supabase
+          .from("wpr_reports")
+          .select("report_number")
+          .ilike("site_name", siteName)
+          .eq("engineer_name", engineerName)
+          .eq("report_date", dateFormatted)
+          .order("report_number", { ascending: false })
+          .limit(1);
+        if (existing?.[0]?.report_number) {
+          const reused = Number(existing[0].report_number) || 1;
+          setReportNum(reused);
+          return reused;
+        }
+      }
+
+      // Next number = max(report_number) for this site across ALL engineers + 1
       const { data } = await supabase
         .from("wpr_reports")
         .select("report_number")
-        .eq("site_name", siteName)
-        .order("report_number", { ascending: false })
-        .limit(1);
-      setReportNum(data?.[0]?.report_number ? data[0].report_number + 1 : 1);
+        .ilike("site_name", siteName);
+
+      const maxNum = (data || []).reduce(
+        (m, r) => Math.max(m, Number(r.report_number) || 0),
+        0,
+      );
+      const next = maxNum + 1;
+      setReportNum(next);
+      return next;
     },
     [supabase],
   );
 
   useEffect(() => {
-    fetchReportNum(site, reportDate);
-  }, [site, reportDate, fetchReportNum]);
+    fetchReportNum(site, reportDate, engineer);
+  }, [site, reportDate, engineer, fetchReportNum]);
   // ── Auto-load site image from site_details when site changes ──
   useEffect(() => {
     if (!site || !supabase) return;
@@ -2602,7 +2633,12 @@ const displayReportNo = zp(reportNum);
     if (data.site_name && !site) setSite(data.site_name);
     if (data.report_date) setReportDate(data.report_date);
     if (data.location !== undefined) setLocation(data.location ?? "");
-    if (data.report_number) setReportNum(data.report_number);
+    // Always resolve report number site-wise (do not trust draft's stale number)
+    await fetchReportNum(
+      data.site_name || targetSite,
+      data.report_date || reportDate,
+      engineer,
+    );
     if (Array.isArray(data.visitor_photos)) setVisitorPhotos(data.visitor_photos);
     if (data.visitor_mode) setVisitorMode(data.visitor_mode);
     if (Array.isArray(data.activities))
@@ -2685,14 +2721,17 @@ const displayReportNo = zp(reportNum);
       const folder = `${dateStr}_${safeEng}`;
       const safeSite = site.replace(/\s+/g, "_");
 
+      // Resolve site-wise report number right before save (shared across all engineers)
+      const resolvedReportNum = await fetchReportNum(site, reportDate, engineer);
+
       // Delete any existing report with same site+engineer+date+number (override old entry)
       await supabase
         .from("wpr_reports")
         .delete()
-        .eq("site_name", site)
+        .ilike("site_name", site)
         .eq("engineer_name", engineer)
         .eq("report_date", dateFormatted)
-        .eq("report_number", reportNum);
+        .eq("report_number", resolvedReportNum);
 
       const { data: reportData, error: reportError } = await supabase
         .from("wpr_reports")
@@ -2700,7 +2739,7 @@ const displayReportNo = zp(reportNum);
           site_name: site,
           engineer_name: engineer,
           report_date: dateFormatted,
-          report_number: reportNum,
+          report_number: resolvedReportNum,
           location,
           status: "submitted",
           activities: activities.map((a) => ({
@@ -2742,7 +2781,7 @@ const displayReportNo = zp(reportNum);
         site,
         engineer,
         reportDate: dateFormatted,
-        reportNum,
+        reportNum: resolvedReportNum,
         location,
         activities,
         graphicalImages,
@@ -2771,7 +2810,7 @@ const displayReportNo = zp(reportNum);
 
       setGenProgress(55);
       setGenStep("Uploading presentation…");
-      const pptPath = `${wprBase}/reports/WPR_${zp(reportNum)}_${safeSite}.pptx`;
+      const pptPath = `${wprBase}/reports/WPR_${zp(resolvedReportNum)}_${safeSite}.pptx`;
       const pptUrl = await uploadBlob(
         supabase,
         bucketName,
@@ -2877,7 +2916,7 @@ const displayReportNo = zp(reportNum);
       const dlUrl = URL.createObjectURL(pptBlob);
       const dlA = document.createElement("a");
       dlA.href = dlUrl;
-      dlA.download = `WPR_${zp(reportNum)}_${site.replace(/\s+/g, "_")}_${fmtDateForFile(reportDate)}.pptx`;
+      dlA.download = `WPR_${zp(resolvedReportNum)}_${site.replace(/\s+/g, "_")}_${fmtDateForFile(reportDate)}.pptx`;
       dlA.style.display = "none";
       document.body.appendChild(dlA);
       dlA.click();
@@ -2892,8 +2931,12 @@ const displayReportNo = zp(reportNum);
           .eq("engineer_name", engineer);
       setDraftExists(false);
       setDraftSavedAt("");
-      await fetchReportNum(site, reportDate);
-      setSuccessUrls({ reportId, pptUrl, viewUrl: `/wpr/${reportId}` });
+      setSuccessUrls({
+        reportId,
+        pptUrl,
+        viewUrl: `/wpr/${reportId}`,
+        reportNum: resolvedReportNum,
+      });
     } catch (err) {
       setGenerating(false);
       showToast("❌ " + (err.message || "Generation failed"), "error", 6000);
@@ -2945,14 +2988,17 @@ const displayReportNo = zp(reportNum);
       setGenProgress(35);
       setGenStep("Saving report record…");
 
+      // Resolve site-wise report number right before save (shared across all engineers)
+      const resolvedReportNum = await fetchReportNum(site, reportDate, engineer);
+
       // Delete any existing report with same site+engineer+date+number (override old entry)
       await supabase
         .from("wpr_reports")
         .delete()
-        .eq("site_name", site)
+        .ilike("site_name", site)
         .eq("engineer_name", engineer)
         .eq("report_date", dateFormatted)
-        .eq("report_number", reportNum);
+        .eq("report_number", resolvedReportNum);
 
       const { data: reportData, error: reportError } = await supabase
         .from("wpr_reports")
@@ -2960,7 +3006,7 @@ const displayReportNo = zp(reportNum);
           site_name: site,
           engineer_name: engineer,
           report_date: dateFormatted,
-          report_number: reportNum,
+          report_number: resolvedReportNum,
           location,
           status: "uploaded",
           activities: [],
@@ -2991,7 +3037,7 @@ const displayReportNo = zp(reportNum);
       setGenStep("Uploading file…");
 
       const ext = file.name.split(".").pop() || "pptx";
-      const pptPath = `${datePath}/wpr/reports/WPR_${zp(reportNum)}_${safeSite}_uploaded.${ext}`;
+      const pptPath = `${datePath}/wpr/reports/WPR_${zp(resolvedReportNum)}_${safeSite}_uploaded.${ext}`;
       const contentType =
         file.type ||
         "application/vnd.openxmlformats-officedocument.presentationml.presentation";
@@ -3013,8 +3059,12 @@ const displayReportNo = zp(reportNum);
 
       setGenProgress(100);
       setGenStep("Done!");
-      await fetchReportNum(site, reportDate);
-      setSuccessUrls({ reportId, pptUrl, viewUrl: `/wpr/${reportId}` });
+      setSuccessUrls({
+        reportId,
+        pptUrl,
+        viewUrl: `/wpr/${reportId}`,
+        reportNum: resolvedReportNum,
+      });
     } catch (err) {
       setGenerating(false);
       showToast("❌ " + (err.message || "Upload failed"), "error", 6000);
@@ -3026,6 +3076,8 @@ const displayReportNo = zp(reportNum);
     setGenerating(false);
     setSuccessUrls(null);
     setGenProgress(0);
+    // Advance to next site-wise number after closing success
+    fetchReportNum(site, reportDate, engineer);
   };
   const imgCount = totalImages();
   const actsCount = activities.filter((a) => a.name).length;
@@ -3369,7 +3421,7 @@ const displayReportNo = zp(reportNum);
                   letterSpacing: ".06em",
                 }}
               >
-                Report Number:
+                Report Number (site-wise):
                   <span
                   style={{
                   fontSize: 18,
@@ -5115,7 +5167,7 @@ const displayReportNo = zp(reportNum);
                 </div>
                 <div className="wpr-success-title">Report Generated!</div>
                 <div className="wpr-success-sub">
-                  WPR — {zp(reportNum)} for <strong>{site}</strong> has been
+                  WPR — {zp(successUrls.reportNum || reportNum)} for <strong>{site}</strong> has been
                   saved with all images uploaded and a PowerPoint presentation
                   created.
                 </div>
@@ -5135,7 +5187,7 @@ const displayReportNo = zp(reportNum);
                       </div>
                       <div
                         style={{ fontSize: 11, color: "rgba(255,255,255,0.7)", marginTop: 2,}}>
-                        WPR_{zp(reportNum)}_{site}.pptx — check your Downloads
+                        WPR_{zp(successUrls.reportNum || reportNum)}_{site}.pptx — check your Downloads
                         folder
                       </div>
                     </div>
@@ -5166,7 +5218,7 @@ const displayReportNo = zp(reportNum);
                 onClick={() =>
                 forceDownload(
                   successUrls.pptUrl,
-                  `WPR_${zp(reportNum)}_${site.replace(/\s+/g, "_")}_${fmtDateForFile(reportDate)}`
+                  `WPR_${zp(successUrls.reportNum || reportNum)}_${site.replace(/\s+/g, "_")}_${fmtDateForFile(reportDate)}`
                 )
               }
               >

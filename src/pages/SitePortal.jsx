@@ -17,8 +17,6 @@ import PortalSwitcher from "../components/PortalSwitcher";
 import "./SitePortal.css";
 import { computeMonthlyLeaveBalance, isMonthlyLeaveRole } from "./leaveUtils.js";
 import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
-import SiteMyTasks from "./SiteMyTasks.jsx";
-import "./SiteMyTasks.css";
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://efqfjfthsleymhljswcq.supabase.co";
@@ -450,11 +448,10 @@ const NAV = [
     children: [
       { key: "daily-report", label: "Daily Report", icon: Ico.report },
       { key: "wpr-generator", label: "Weekly Report", icon: Ico.weekly },
+      { key: "weekly-plan", label: "Weekly Plan", icon: Ico.weeklyPlan },
       { key: "site-report", label: "Site Visit Report", icon: Ico.site },
       //{ key: "material-requirement", label: "Material Requirement", icon: Ico.materialRequirement,},
       { key: "my-reports", label: "My Reports", icon: Ico.myRpt },
-      { key: "weekly-plan", label: "Weekly Plan", icon: Ico.weeklyPlan },
-      { key: "my-tasks", label: "My Tasks", icon: Ico.weeklyPlan },
       { key: "manpower-reports", label: "Manpower Report", icon: Ico.manRpt },
     ],
   },
@@ -1627,8 +1624,7 @@ const NAV_COLORS = {
   "wpr-generator": "#db2777",
   "site-report": "#db2777",
   "my-reports": "#16a34a",
-  "weekly-plan": "#0f766e",
-  "my-tasks": "#0f766e",
+  "weekly-plan": "#db2777",
   "manpower-reports": "#16a34a",
   "report-submissions": "#0891b2",
   "profile": "#bd3c0a",
@@ -1992,8 +1988,6 @@ useEffect(() => {
         return <MyReports user={user} />;
       case "weekly-plan":
         return <WeeklyPlanReport user={user} />;
-      case "my-tasks":
-        return <SiteMyTasks />;
       case "manpower-reports":
         return <ManpowerReport user={user} />;
       case "profile":

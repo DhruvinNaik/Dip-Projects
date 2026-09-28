@@ -4,6 +4,10 @@ import autoTable from "jspdf-autotable";
 import { supabase } from "../supabase";
 import Navbar from "../components/Navbar";
 import PortalFloaters from "../components/PortalFloaters";
+import EmployeeDetailModal from "./EmployeeDetailModal";
+import HrDocuments from "./HrDocuments";
+import HrInsurance, { daysUntilRenewal, renewalStatus } from "./HrInsurance";
+import HrExpenses from "./HrExpenses";
 import "./HRPortal.css";
 
 const MENU = [
@@ -337,8 +341,16 @@ export default function HRPortal() {
   const [registerLoading, setRegisterLoading] = useState(false);
   const [registerError, setRegisterError] = useState("");
   const [registerLoaded, setRegisterLoaded] = useState(false);
+  const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [insuranceReminders, setInsuranceReminders] = useState([]);
+  const [insuranceTick, setInsuranceTick] = useState(0);
 
   useEffect(() => setUser(getStoredUser()), []);
+
+  useEffect(() => {
+    if(!user || activeItem !== "Attendance" || registerLoaded) return;
+    loadAttendanceRegister();
+  }, [user, activeItem, registerLoaded]);
 
   useEffect(() => {
     if (
@@ -497,7 +509,6 @@ export default function HRPortal() {
     setRegisterLoaded(true);
     setRegisterLoading(false);
   }
-
   function downloadRegisterPdf() {
     if (!registerRows.length || !registerDays.length) return;
     const monthLabel =
@@ -607,7 +618,7 @@ export default function HRPortal() {
           const row = registerRows[data.row.index];
           const status = row?.days?.[day.key]?.status || "A";
           const style = statusStyles[status] || statusStyles.A;
-          data.cell.styles.fillColor = style.fillColor;
+          data.cell.styles.fillColor = style.fillColor; 
           data.cell.styles.textColor = style.textColor;
           data.cell.styles.fontStyle = "bold";
         } else if (col === dayCount + 1) {
@@ -781,6 +792,27 @@ export default function HRPortal() {
     };
   }, [user]);
 
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase.from("hr_insurance").select("*");
+      if (cancelled) return;
+      if (error) {
+        setInsuranceReminders([]);
+        return;
+      }
+      const due = (data || [])
+        .map((row) => ({ ...row, days: daysUntilRenewal(row.renewal_date) }))
+        .filter((row) => row.days != null && row.days < 4)
+        .sort((a, b) => a.days - b.days);
+      setInsuranceReminders(due);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, insuranceTick]);
+
   const firstName = user?.name?.split(" ")[0] || "there";
   const hour = new Date().getHours();
   const greeting =
@@ -795,7 +827,6 @@ export default function HRPortal() {
   const presentRate = totalEmployees
     ? Math.round((presentToday / totalEmployees) * 100)
     : 0;
-  const livePeople = overview?.people || [];
   const pendingLeaves = overview?.pendingLeaves || [];
   const attendanceDays = overview?.attendanceDays || [];
   const selectItem = (label) => {
@@ -1167,40 +1198,41 @@ export default function HRPortal() {
                 </article>
               </div>
               <div className="hr-bottom-grid">
-                <article className="hr-panel">
+                <article className="hr-panel hr-reminder-panel">
                   <div className="hr-panel-heading">
                     <div>
-                      <h2>People pulse</h2>
-                      <p>Quick view of your team</p>
+                      <h2>Reminders</h2>
+                      <p>Insurance expiring in less than 4 days</p>
                     </div>
-                    <button
-                      className="hr-quiet-button"
-                      onClick={() => selectItem("Employees")}
-                    >
-                      View all <Icon name="arrow" size={14} />
-                    </button>
+                    <span className="hr-count-badge">{insuranceReminders.length}</span>
                   </div>
-                  <div className="hr-people-list">
-                    {livePeople.map((person) => (
-                      <div className="hr-person-row" key={person.name}>
-                        <div className={`hr-mini-avatar ${person.color}`}>
-                          {person.initials}
+                  <div className="hr-reminder-list">
+                    {insuranceReminders.map((policy) => {
+                      const status = renewalStatus(policy.renewal_date);
+                      return (
+                        <div
+                          className={`hr-reminder-row${status.key === "expired" ? " is-expired" : ""}`}
+                          key={policy.id}
+                        >
+                          <div>
+                            <strong>{policy.employee_name || policy.user_name || "Employee"}</strong>
+                            <span>
+                              {policy.insurance_type || "Insurance"}
+                              {policy.provider ? ` · ${policy.provider}` : ""}
+                              {policy.renewal_date ? ` · ${String(policy.renewal_date).slice(0, 10)}` : ""}
+                            </span>
+                          </div>
+                          <em>{status.label}</em>
                         </div>
-                        <div>
-                          <strong>{person.name}</strong>
-                          <span>{person.role}</span>
-                        </div>
-                        <em className={`hr-person-status ${person.color}`}>
-                          {person.status}
-                        </em>
-                      </div>
-                    ))}
-                    {overview && !livePeople.length && (
-                      <div className="hr-list-empty">
-                        No employee records found
-                      </div>
+                      );
+                    })}
+                    {!insuranceReminders.length && (
+                      <div className="hr-list-empty">No insurance renewals due in the next 4 days</div>
                     )}
                   </div>
+                  <button className="hr-panel-link" onClick={() => selectItem("Insurance")}>
+                    Open insurance tracker <Icon name="arrow" size={14} />
+                  </button>
                 </article>
                 <article className="hr-panel hr-birthday-panel">
                   <div className="hr-panel-heading">
@@ -1247,7 +1279,19 @@ export default function HRPortal() {
                     const dept = employee.department || employee.designation || employee.role || "—";
                     const stat = employeeStats?.get(normalizeUsername(username)) || { present: 0, late: 0, leave: 0 };
                     return (
-                      <article className="hr-employee-card" key={username || employee.name}>
+                      <article
+                        className="hr-employee-card"
+                        key={username || employee.name}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => setSelectedEmployee(employee)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedEmployee(employee);
+                          }
+                        }}
+                      >
                         <div className="hr-employee-avatar">{initialsFor(employee.name || username)}</div>
                         <strong className="hr-employee-name">{employee.name || username || "Unnamed employee"}</strong>
                         <span className="hr-employee-dept">{dept}</span>
@@ -1505,6 +1549,23 @@ export default function HRPortal() {
               </div>
               <div className="hr-tracker-note"><span className="hr-tracker-dot approved" /> Only approved leaves are included in Used. Each leave period is counted by calendar days, including Sundays.</div>
             </>
+          ) : activeItem === "Expenses" ? (
+            <HrExpenses
+              employees={overview?.users || []}
+              search={search}
+            />
+          ) : activeItem === "Insurance" ? (
+            <HrInsurance
+              employees={overview?.users || []}
+              search={search}
+              onChanged={() => setInsuranceTick((tick) => tick + 1)}
+            />
+          ) : activeItem === "Documents" ? (
+            <HrDocuments
+              employees={overview?.users || []}
+              search={search}
+              onAddEmployee={() => selectItem("New Recruitment")}
+            />
           ) : (
             <div className="hr-empty-view">
               <div className="hr-empty-icon">
@@ -1535,6 +1596,12 @@ export default function HRPortal() {
         </main>
       </div>
       <PortalFloaters showBot botScope="hr" />
+      {selectedEmployee && (
+        <EmployeeDetailModal
+          employee={selectedEmployee}
+          onClose={() => setSelectedEmployee(null)}
+        />
+      )}
     </div>
   );
 }

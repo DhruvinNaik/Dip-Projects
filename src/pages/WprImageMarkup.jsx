@@ -523,7 +523,10 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
-    setSelectedText(null);
+    if (selectedText != null) {
+      setSelectedText(null);
+      return;
+    }
     if (toolRef.current === "text") {
       const point = pointFrom(event);
       const rect = canvasRef.current.getBoundingClientRect();

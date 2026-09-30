@@ -1034,6 +1034,8 @@ const SERIES_CFG = [
 ];
 
 
+
+
 function MonthDrilldown({ monthKey, items, onClose }) {
   const label = monthLabelOf(monthKey);
   const byType = SERIES_CFG.map((cfg) => ({

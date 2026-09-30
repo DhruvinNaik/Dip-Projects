@@ -226,6 +226,55 @@ function scaleShape(mark, factor) {
   };
 }
 
+function ToolIcon({ name }) {
+  const common = {
+    viewBox: "0 0 24 24",
+    width: 16,
+    height: 16,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": true,
+  };
+  if (name === "zoom-out") {
+    return <svg {...common}><circle cx="10" cy="10" r="6" /><path d="M15 15l5 5M7.5 10h5" /></svg>;
+  }
+  if (name === "zoom-in") {
+    return <svg {...common}><circle cx="10" cy="10" r="6" /><path d="M15 15l5 5M10 7.5v5M7.5 10h5" /></svg>;
+  }
+  if (name === "smaller") {
+    return (
+      <svg {...common}>
+        <path d="M4 4l6 6" />
+        <path d="M6.5 10H10V6.5" />
+        <path d="M20 20l-6-6" />
+        <path d="M17.5 14H14V17.5" />
+      </svg>
+    );
+  }
+  if (name === "larger") {
+    return (
+      <svg {...common}>
+        <path d="M14 5h5v5M19.5 4.5l-6 6M10 19H5v-5M4.5 19.5l6-6" />
+      </svg>
+    );
+  }
+  if (name === "edit") {
+    return <svg {...common}><path d="M4 20h4l11-11-4-4L4 16v4zM13 7l4 4" /></svg>;
+  }
+  if (name === "undo") {
+    return (
+      <svg {...common}>
+        <path d="M9 14L4 9l5-5" />
+        <path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11" />
+      </svg>
+    );
+  }
+  return <svg {...common}><path d="M5 7h14M9 7V5h6v2M8 7l1 12h6l1-12" /></svg>;
+}
+
 function boxFrom(start, end) {
   return {
     x: Math.min(start.x, end.x),
@@ -264,6 +313,12 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   toolRef.current = tool;
   colorRef.current = color;
   marksRef.current = marks;
+
+  useEffect(() => {
+    if (selectedText == null) return;
+    const mark = marksRef.current[selectedText];
+    if (mark?.color) setColor(mark.color);
+  }, [selectedText]);
 
   useEffect(() => {
     const img = new Image();
@@ -490,18 +545,6 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
       return;
     }
     if (!ready || textBox) return;
-    if (toolRef.current === "pan") {
-      const stage = stageRef.current;
-      dragRef.current = {
-        mode: "pan",
-        x: event.clientX,
-        y: event.clientY,
-        scrollLeft: stage?.scrollLeft || 0,
-        scrollTop: stage?.scrollTop || 0,
-      };
-      event.currentTarget.setPointerCapture(event.pointerId);
-      return;
-    }
     const point = pointFrom(event);
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -535,8 +578,18 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
-    if (selectedText != null) {
-      setSelectedText(null);
+    if (selectedText != null || toolRef.current === "pan") {
+      if (selectedText != null) setSelectedText(null);
+      if (toolRef.current !== "pan") return;
+      const stage = stageRef.current;
+      dragRef.current = {
+        mode: "pan",
+        x: event.clientX,
+        y: event.clientY,
+        scrollLeft: stage?.scrollLeft || 0,
+        scrollTop: stage?.scrollTop || 0,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
       return;
     }
     if (toolRef.current === "text") {
@@ -682,6 +735,13 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     }));
   };
 
+  const deleteSelected = () => {
+    if (selectedText == null) return;
+    setMarks((prev) => prev.filter((_, index) => index !== selectedText));
+    setSelectedText(null);
+    setTextBox(null);
+  };
+
   const editSelectedText = () => {
     if (selectedText == null) return;
     const mark = marksRef.current[selectedText];
@@ -724,7 +784,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
         <header className="wpr-mark-head">
           <div>
             <strong>Mark work sections</strong>
-            <p>The arrow only zooms and scrolls. Choose Square, Circle, Draw, or Text when you want to mark the image.</p>
+            <p>With the arrow, tap a mark to move, resize, or recolor it. Drag empty space to scroll. Choose Square, Circle, Draw, or Text to add a mark.</p>
           </div>
           <button type="button" className="wpr-mark-x" onClick={onCancel} aria-label="Close">×</button>
         </header>
@@ -757,17 +817,24 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
                 className={`wpr-mark-swatch${color === item ? " is-on" : ""}`}
                 style={{ background: item }}
                 aria-label={item}
-                onClick={() => setColor(item)}
+                onClick={() => {
+                  setColor(item);
+                  if (selectedText == null) return;
+                  setMarks((prev) => prev.map((mark, index) => (
+                    index === selectedText ? { ...mark, color: item } : mark
+                  )));
+                }}
               />
             ))}
           </span>
-          <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(Math.round((zoom - 0.25) * 100) / 100)}>Zoom out</button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Zoom out" onClick={() => changeZoom(Math.round((zoom - 0.25) * 100) / 100)}><ToolIcon name="zoom-out" /></button>
           <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button>
-          <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(Math.round((zoom + 0.25) * 100) / 100)}>Zoom in</button>
-          <button type="button" className="wpr-mark-tool" onClick={() => resizeSelected(0.85)} disabled={selectedText == null}>Smaller</button>
-          <button type="button" className="wpr-mark-tool" onClick={() => resizeSelected(1.18)} disabled={selectedText == null}>Larger</button>
-          <button type="button" className="wpr-mark-tool" onClick={editSelectedText} disabled={selectedText == null || marks[selectedText]?.type !== "text"}>Edit text</button>
-          <button type="button" className="wpr-mark-tool" onClick={() => { setMarks((prev) => prev.slice(0, -1)); setSelectedText(null); }} disabled={!marks.length}>Undo</button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Zoom in" onClick={() => changeZoom(Math.round((zoom + 0.25) * 100) / 100)}><ToolIcon name="zoom-in" /></button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Smaller" onClick={() => resizeSelected(0.85)} disabled={selectedText == null}><ToolIcon name="smaller" /></button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Larger" onClick={() => resizeSelected(1.18)} disabled={selectedText == null}><ToolIcon name="larger" /></button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Edit text" onClick={editSelectedText} disabled={selectedText == null || marks[selectedText]?.type !== "text"}><ToolIcon name="edit" /></button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Undo" onClick={() => { setMarks((prev) => prev.slice(0, -1)); setSelectedText(null); }} disabled={!marks.length}><ToolIcon name="undo" /></button>
+          <button type="button" className="wpr-mark-tool wpr-mark-icon" aria-label="Delete" onClick={deleteSelected} disabled={selectedText == null}><ToolIcon name="delete" /></button>
           <button type="button" className="wpr-mark-tool" onClick={() => { setMarks([]); setDraft(null); }} disabled={!marks.length}>Clear</button>
         </div>
         <div className="wpr-mark-stage" ref={stageRef}>
@@ -779,7 +846,6 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onDoubleClick={(event) => {
-              if (toolRef.current === "pan") return;
               const index = hitMark(pointFrom(event));
               if (index < 0) return;
               const mark = marksRef.current[index];

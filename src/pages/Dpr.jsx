@@ -237,6 +237,9 @@ border:2px solid transparent;border-radius:12px;color:#6b2d0f;cursor:pointer;fon
 .photo-remove:hover { background:var(--red); }
 .photo-add-btn { width:120px; height:120px; border:2px dashed var(--border); border-radius:6px; background:var(--bg); cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; color:var(--ink3); font-size:12px; font-weight:600; transition:all .15s; }
 .photo-add-btn:hover { border-color:var(--orange3); color:var(--orange); background:var(--orange-bg); }
+.dpr-mode-tabs { display:flex; gap:8px; margin-bottom:14px; }
+.dpr-mode-tab { flex:1; height:40px; border:1.5px solid var(--border); border-radius:8px; background:var(--card); color:var(--ink2); font-size:13px; font-weight:700; cursor:pointer; display:flex; align-items:center; justify-content:center; gap:6px; }
+.dpr-mode-tab.active { background:var(--grad); color:#fff; border-color:transparent; }
 
 .visitor-card-hdr{
     display:flex;
@@ -965,17 +968,22 @@ function buildCubeHtml(cube) {
 }
 
 function buildVisitorsHtml(visitors) {
-  const valid = (visitors || []).filter((v) => v.name);
+  const valid = (visitors || []).filter((v) => v.name || v.instruction);
   if (!valid.length) return "";
   return valid
     .map(
       (v) => `
     <div class="visitor-row">
-      <div class="visitor-name">👤 ${esc(v.name)}</div>
+      ${v.name ? `<div class="visitor-name">👤 ${esc(v.name)}</div>` : ""}
       ${v.instruction ? `<div class="visitor-instr">${esc(v.instruction)}</div>` : ""}
     </div>`,
     )
     .join("");
+}
+
+function buildSiteVisitHtml(payload) {
+  if (payload.visitorMode === "photo") return buildPhotosHtml(payload.visitorPhotos);
+  return buildVisitorsHtml(payload.visitors);
 }
 
 function buildPlanningHtml(planning) {
@@ -1158,7 +1166,7 @@ function buildEveningPdfHtml(payload, pendingMaterials) {
   sections += pdfSection("CUBE TEST RESULTS", buildCubeHtml(payload.cube));
   sections += pdfSection(
     "SITE VISIT & INSTRUCTIONS",
-    buildVisitorsHtml(payload.visitors),
+    buildSiteVisitHtml(payload),
   );
   sections += pdfSection(
     "ADDITIONAL INFORMATION",
@@ -1531,7 +1539,7 @@ async function generateEveningPdf(payload, onProgress) {
     ["MATERIAL REQUIREMENT", pmHtml],
     ["MATERIAL USED / RECEIVED", buildMaterialHtml(payload.material)],
     ["CUBE TEST RESULTS", buildCubeHtml(payload.cube)],
-    ["SITE VISIT & INSTRUCTIONS", buildVisitorsHtml(payload.visitors)],
+    ["SITE VISIT & INSTRUCTIONS", buildSiteVisitHtml(payload)],
     ["ADDITIONAL INFORMATION", buildCustomFieldsHtml(payload.customFields)],
     ["CHECKLIST PHOTOS", buildPhotosHtml(payload.checklistPhotos)], // NEW
     ["WORK PROGRESS PHOTOS", buildPhotosHtml(payload.photos)],
@@ -4053,6 +4061,8 @@ function DprForm({ user }) {
   const [visitors, setVisitors] = useState([
     { id: "v_init", name: "", instruction: "" },
   ]);
+  const [visitorMode, setVisitorMode] = useState("manual");
+  const [visitorPhotos, setVisitorPhotos] = useState([]);
   const [customFields, setCustomFields] = useState([]);
   const [photos, setPhotos] = useState([]);
   const [checklistPhotos, setChecklistPhotos] = useState([]);
@@ -4070,7 +4080,8 @@ function DprForm({ user }) {
   const [lightbox, setLightbox] = useState(null);
   const [checklistConverting, setChecklistConverting] = useState(false);
   const [photosConverting, setPhotosConverting] = useState(false);
-  const anyConverting = checklistConverting || photosConverting;
+  const [visitorConverting, setVisitorConverting] = useState(false);
+  const anyConverting = checklistConverting || photosConverting || visitorConverting;
   const openLightbox = (photos, idx) => {
     const filtered = photos.filter((p) => p.data || p.supabaseUrl);
     if (!filtered.length) return;
@@ -4413,7 +4424,9 @@ const handleSummaryKeyDown = (e) => {
     material,
     materialRequirement: materialReq,
     cube, // ← added materialRequirement
-    visitors: visitors.filter((v) => v.name),
+    visitorMode,
+    visitors: visitors.filter((v) => v.name || v.instruction),
+    visitorPhotos,
     customFields: customFields.filter((f) => f.title || f.value),
     photos,
     checklistPhotos,
@@ -4467,6 +4480,8 @@ const handleSummaryKeyDown = (e) => {
         ? d.visitors.map((v, i) => ({ ...v, id: "dr_v_" + i }))
         : [{ id: "v_init", name: "", instruction: "" }],
     );
+    setVisitorMode(d.visitorMode === "photo" ? "photo" : "manual");
+    setVisitorPhotos(d.visitorPhotos || []);
     setCustomFields(d.customFields || []);
     setPhotos(d.photos || []);
     setChecklistPhotos(d.checklistPhotos || []);
@@ -4501,6 +4516,18 @@ const handleSummaryKeyDown = (e) => {
     draftOpenedRef.current = false;
     const payload = collectPayload();
     try {
+      if (payload.visitorMode === "photo") {
+        const folder = `${buildSiteDatePath(date)}/dpr/visitors`;
+        payload.visitorPhotos = await uploadBatch(payload.visitorPhotos || [], async (ph, i) => {
+          if (!ph?.data) return { supabaseUrl: ph?.supabaseUrl || "", storagePath: ph?.storagePath || "", caption: ph?.caption || "" };
+          const path = `${folder}/visitor_${i + 1}.jpg`;
+          const url = await uploadPhotoToSupabase(ph.data, site, path);
+          return { supabaseUrl: url, storagePath: path, caption: ph.caption || "" };
+        });
+        payload.visitors = [];
+      } else {
+        payload.visitorPhotos = [];
+      }
       // Delete any existing report with same site+engineer+date+type (override old entry)
       await supabase
         .from("dpr_reports")
@@ -4578,6 +4605,20 @@ async function uploadBatch(items, uploadFn, concurrency = 4) {
       });
       payload.checklistPhotos = uploadedChecklistPhotos;
 
+      if (payload.visitorMode === "photo" && payload.visitorPhotos?.length) {
+        setSubmitDetail("Uploading site visit photos…");
+        const folder = `${photoFolder}/visitors`;
+        payload.visitorPhotos = await uploadBatch(payload.visitorPhotos, async (ph, i) => {
+          if (!ph?.data) return ph;
+          const path = `${folder}/visitor_${i + 1}.jpg`;
+          const url = await uploadPhotoToSupabase(ph.data, site, path);
+          return { ...ph, supabaseUrl: url, storagePath: path };
+        });
+        payload.visitors = [];
+      } else {
+        payload.visitorPhotos = [];
+      }
+
       if (materialReq.length) {
         setSubmitDetail("Submitting material requirements…");
         await submitMaterialRequirements(materialReq, site, engineer);
@@ -4623,6 +4664,13 @@ async function uploadBatch(items, uploadFn, concurrency = 4) {
           ...payload,
           photos: photosForDb,
           checklistPhotos: checklistPhotosForDb,
+          visitors: payload.visitorMode === "photo" ? [] : payload.visitors,
+          visitorMode: payload.visitorMode || "manual",
+          visitorPhotos: (payload.visitorPhotos || []).map((p) => ({
+            supabaseUrl: p.supabaseUrl,
+            storagePath: p.storagePath,
+            caption: p.caption || "",
+          })),
         },
         pdf_url: pdfPublicUrl,
         photo_folder: photoFolder,
@@ -4889,6 +4937,8 @@ async function uploadBatch(items, uploadFn, concurrency = 4) {
     setConcreteDesc("");
     setCube("");
     setVisitors([{ id: "v_init", name: "", instruction: "" }]);
+    setVisitorMode("manual");
+    setVisitorPhotos([]);
     setCustomFields([]);
     setPdfUrl(null);
     setMaterialReq([]);
@@ -5286,7 +5336,33 @@ async function uploadBatch(items, uploadFn, concurrency = 4) {
           </SectionBlock>
 
           <SectionBlock title="9. Site Visit &amp; Instructions">
-            <VisitorsSection visitors={visitors} setVisitors={setVisitors} />
+            <div className="dpr-mode-tabs">
+              <button
+                type="button"
+                className={`dpr-mode-tab${visitorMode === "manual" ? " active" : ""}`}
+                onClick={() => setVisitorMode("manual")}
+              >
+                Type Details
+              </button>
+              <button
+                type="button"
+                className={`dpr-mode-tab${visitorMode === "photo" ? " active" : ""}`}
+                onClick={() => setVisitorMode("photo")}
+              >
+                Upload Photo
+              </button>
+            </div>
+            {visitorMode === "manual" ? (
+              <VisitorsSection visitors={visitors} setVisitors={setVisitors} />
+            ) : (
+              <PhotosSection
+                photos={visitorPhotos}
+                setPhotos={setVisitorPhotos}
+                onLightbox={openLightbox}
+                showToast={showToast}
+                onConvertingChange={setVisitorConverting}
+              />
+            )}
           </SectionBlock>
 
           <SectionBlock title="10. Additional Custom Fields">

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import ExcelJS from "exceljs";
 import { supabase } from "../supabase";
-import { answerDipQuery, DIP_CHIPS, DIP_HR_CHIPS } from "../lib/dipBot";
+import { answerDipQuery, DIP_CHIPS, DIP_HR_CHIPS, DIP_SITE_CHIPS, DIP_OFFICE_CHIPS } from "../lib/dipBot";
 import logoUrl from "../assets/logo.png";
 import "./PortalFloaters.css";
 
@@ -351,6 +352,15 @@ function Ico({ name }) {
       </svg>
     );
   }
+  if (name === "box") {
+    return (
+      <svg {...common}>
+        <path d="M21 8l-9-5-9 5 9 5 9-5z" />
+        <path d="M3 8v8l9 5 9-5V8" />
+        <path d="M12 13v8" />
+      </svg>
+    );
+  }
   if (name === "close") {
     return (
       <svg {...common}>
@@ -476,14 +486,18 @@ function ResultTable({ columns, rows }) {
 }
 
 function DipPanel({ user, onClose, scope = "admin" }) {
-  const chips = scope === "hr" ? DIP_HR_CHIPS : DIP_CHIPS;
+  const chips = scope === "hr" ? DIP_HR_CHIPS : scope === "site" ? DIP_SITE_CHIPS : scope === "office" ? DIP_OFFICE_CHIPS : DIP_CHIPS;
   const [messages, setMessages] = useState([
     {
       role: "bot",
       text:
         scope === "hr"
           ? `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot for HR. Ask me about employees, attendance, leaves, expenses, or documents.`
-          : `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot. Ask me who is on leave, task lists, delegated work, tickets, or anything else in this portal.`,
+          : scope === "site"
+            ? `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot for your sites. Ask me about daily and weekly reports, site visits, arrived material, tasks, or leave.`
+            : scope === "office"
+              ? `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot. Ask me about your profile, tasks, leave, attendance, or tickets.`
+              : `Hi${user?.name ? ` ${user.name}` : ""}, I’m DIP Bot. Ask me who is on leave, task lists, delegated work, tickets, or anything else in this portal.`,
       chips,
     },
   ]);
@@ -524,7 +538,11 @@ function DipPanel({ user, onClose, scope = "admin" }) {
           <div className="pf-head-sub">
             {scope === "hr"
               ? "Ask about employees, attendance, leaves & HR data"
-              : "Ask about leaves, tasks, tickets & people"}
+              : scope === "site"
+                ? "Ask about your sites, reports, material & tasks"
+                : scope === "office"
+                  ? "Ask about your profile, tasks, leave & attendance"
+                  : "Ask about leaves, tasks, tickets & people"}
           </div>
         </div>
         <button className="pf-icon-btn" onClick={onClose} aria-label="Close DIP Bot">
@@ -1735,7 +1753,7 @@ function ChatPanel({
               ))}
             </div>
           )}
-          <div className="pf-body pf-scroll-chat" style={{ padding: 0, background: "#fff" }}>
+          <div className="pf-body pf-scroll-chat pf-list">
             {missingTable && (
               <div className="pf-setup">
                 Groups need a one-time database setup. Run{" "}
@@ -1848,7 +1866,7 @@ function ChatPanel({
               placeholder={tab === "users" ? "Search people…" : "Search chats…"}
             />
           </div>
-          <div className="pf-body pf-scroll-chat" style={{ padding: 0, background: "#fff" }}>
+          <div className="pf-body pf-scroll-chat pf-list">
             {missingTable && (
               <div className="pf-setup">
                 Chat needs a one-time database setup. Run{" "}
@@ -2051,9 +2069,595 @@ function ChatPanel({
   );
 }
 
+function assignedSites(user) {
+  const out = [];
+  const push = (value) => {
+    const name = String(value || "").trim();
+    if (!name || out.some((item) => item.toLowerCase() === name.toLowerCase())) return;
+    out.push(name);
+  };
+  const raw = user?.site_names;
+  if (Array.isArray(raw)) raw.forEach(push);
+  else if (typeof raw === "string" && raw.trim()) {
+    const text = raw.trim();
+    if (text.startsWith("{") && text.endsWith("}")) {
+      text.slice(1, -1).split(",").forEach((part) => push(part.replace(/^"|"$/g, "")));
+    } else if (text.startsWith("[")) {
+      try {
+        JSON.parse(text).forEach(push);
+      } catch {
+        text.split(",").forEach(push);
+      }
+    } else {
+      text.split(",").forEach(push);
+    }
+  }
+  push(user?.site_name);
+  return out;
+}
+
+function sortByName(rows) {
+  return [...rows].sort((a, b) => String(a.name || "").localeCompare(String(b.name || ""), undefined, { sensitivity: "base" }));
+}
+
+function sortText(values) {
+  return [...values].sort((a, b) => String(a).localeCompare(String(b), undefined, { sensitivity: "base" }));
+}
+
+function MaterialPanel({ user, onClose }) {
+  const sites = useMemo(() => assignedSites(user), [user]);
+  const [siteName, setSiteName] = useState(() => assignedSites(user)[0] || "");
+  const userName = user?.user_name || user?.username || "";
+  const recordedBy = user?.name || userName;
+  const [catalog, setCatalog] = useState({ categories: [], subcategories: [], types: [], units: [] });
+  const [records, setRecords] = useState([]);
+  const [categoryId, setCategoryId] = useState("");
+  const [subcategoryId, setSubcategoryId] = useState("");
+  const [typeId, setTypeId] = useState("");
+  const [quantity, setQuantity] = useState("");
+  const [unit, setUnit] = useState("");
+  const [tab, setTab] = useState("add");
+  const [search, setSearch] = useState("");
+  const [filterCategory, setFilterCategory] = useState("");
+  const [filterSubcategory, setFilterSubcategory] = useState("");
+  const [filterType, setFilterType] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
+  const [adding, setAdding] = useState("");
+  const [draftName, setDraftName] = useState("");
+  const [catalogSaving, setCatalogSaving] = useState(false);
+  const toastTimer = useRef(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    const [categories, subcategories, types, units, arrivals] = await Promise.all([
+      supabase.from("material_categories").select("id, name, sort_order").order("sort_order"),
+      supabase.from("material_subcategories").select("id, category_id, name, sort_order").order("sort_order"),
+      supabase.from("material_types").select("id, subcategory_id, name, sort_order").order("sort_order"),
+      supabase.from("material_units").select("id, subcategory_id, unit, sort_order").order("sort_order"),
+      supabase.from("site_material_arrivals").select("*").order("created_at", { ascending: false }).limit(1000),
+    ]);
+    const failed = [categories, subcategories, types, units, arrivals].find((result) => result.error);
+    if (failed?.error) {
+      setError("Material tables are not ready. Run supabase/site_material.sql in the Supabase SQL editor.");
+      setLoading(false);
+      return;
+    }
+    setCatalog({
+      categories: categories.data || [],
+      subcategories: subcategories.data || [],
+      types: types.data || [],
+      units: units.data || [],
+    });
+    const rows = arrivals.data || [];
+    setRecords(siteName ? rows.filter((row) => row.site_name === siteName) : rows);
+    setLoading(false);
+  }, [siteName]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    if (siteName || !sites[0]) return;
+    setSiteName(sites[0]);
+  }, [siteName, sites]);
+
+  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+
+  const showToast = (message) => {
+    setToast(message);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(""), 1600);
+  };
+
+  const openAdd = (kind) => {
+    setError("");
+    setDraftName("");
+    setAdding(kind);
+  };
+
+  const closeAdd = () => {
+    setAdding("");
+    setDraftName("");
+    setError("");
+  };
+
+  const filterSubcategories = catalog.subcategories.filter((row) => !filterCategory || row.category_id === filterCategory);
+  const filterTypes = catalog.types.filter((row) => {
+    if (filterSubcategory) return row.subcategory_id === filterSubcategory;
+    if (!filterCategory) return true;
+    return filterSubcategories.some((sub) => sub.id === row.subcategory_id);
+  });
+  const filteredRecords = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const categoryName = catalog.categories.find((row) => row.id === filterCategory)?.name || "";
+    const subcategoryName = catalog.subcategories.find((row) => row.id === filterSubcategory)?.name || "";
+    const typeName = catalog.types.find((row) => row.id === filterType)?.name || "";
+    return records.filter((row) => {
+      if (categoryName && row.category_name !== categoryName) return false;
+      if (subcategoryName && row.subcategory_name !== subcategoryName) return false;
+      if (typeName && row.type_name !== typeName) return false;
+      if (!q) return true;
+      return [row.category_name, row.subcategory_name, row.type_name, row.unit, row.recorded_by, row.site_name, row.quantity]
+        .join(" ")
+        .toLowerCase()
+        .includes(q);
+    });
+  }, [records, search, filterCategory, filterSubcategory, filterType, catalog]);
+
+  const downloadExcel = async () => {
+    const headers = ["Date", "Site", "Category", "Subcategory", "Type", "Quantity", "Unit", "Recorded by"];
+    const rows = filteredRecords.length
+      ? filteredRecords.map((row) => [
+          row.created_at ? new Date(row.created_at).toLocaleString("en-IN") : "",
+          row.site_name || "",
+          row.category_name || "",
+          row.subcategory_name || "",
+          row.type_name || "",
+          row.quantity ?? "",
+          row.unit || "",
+          row.recorded_by || "",
+        ])
+      : [headers.map(() => "")];
+    const book = new ExcelJS.Workbook();
+    const sheet = book.addWorksheet("Arrived material");
+    sheet.columns = [
+      { width: 22 }, { width: 22 }, { width: 16 }, { width: 16 },
+      { width: 14 }, { width: 12 }, { width: 12 }, { width: 20 },
+    ];
+    const header = sheet.addRow(headers);
+    header.height = 22;
+    header.eachCell((cell) => {
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
+      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+      cell.alignment = { vertical: "middle" };
+    });
+    rows.forEach((values, index) => {
+      const added = sheet.addRow(values);
+      if (index % 2 === 1) {
+        added.eachCell((cell) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
+        });
+      }
+    });
+    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    const buffer = await book.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `arrived-material${siteName ? `-${siteName.replace(/\s+/g, "-")}` : ""}.xlsx`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
+  const subcategories = sortByName(catalog.subcategories.filter((row) => row.category_id === categoryId));
+  const types = sortByName(catalog.types.filter((row) => row.subcategory_id === subcategoryId));
+  const units = sortText(catalog.units.filter((row) => row.subcategory_id === subcategoryId).map((row) => row.unit));
+  const sortedCategories = sortByName(catalog.categories);
+  const sortedSites = sortText(sites);
+  const sortedFilterSubcategories = sortByName(filterSubcategories);
+  const sortedFilterTypes = sortByName(filterTypes);
+
+  const pickCategory = (id) => {
+    setCategoryId(id);
+    setSubcategoryId("");
+    setTypeId("");
+    setQuantity("");
+    setUnit("");
+  };
+
+  const pickSubcategory = (id) => {
+    setSubcategoryId(id);
+    setTypeId("");
+    setQuantity("");
+    const nextUnits = catalog.units.filter((row) => row.subcategory_id === id).map((row) => row.unit);
+    setUnit(nextUnits.length === 1 ? nextUnits[0] : "");
+  };
+
+  const addCatalog = async () => {
+    const name = draftName.trim().replace(/\s+/g, " ");
+    if (!name) {
+      setError("Enter a name.");
+      return;
+    }
+    const same = (left, right) => String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
+    const nextOrder = (rows) => rows.reduce((max, row) => Math.max(max, Number(row.sort_order) || 0), 0) + 1;
+    setCatalogSaving(true);
+    setError("");
+    let inserted = null;
+    let saveErr = null;
+    if (adding === "category") {
+      if (catalog.categories.some((row) => same(row.name, name))) {
+        setCatalogSaving(false);
+        setError("That category already exists.");
+        return;
+      }
+      const result = await supabase.from("material_categories").insert({ name, sort_order: nextOrder(catalog.categories) }).select("id, name, sort_order").single();
+      inserted = result.data;
+      saveErr = result.error;
+      if (inserted) {
+        setCatalog((prev) => ({ ...prev, categories: [...prev.categories, inserted] }));
+        pickCategory(inserted.id);
+      }
+    } else if (adding === "subcategory") {
+      if (!categoryId) {
+        setCatalogSaving(false);
+        setError("Select a category first.");
+        return;
+      }
+      const siblings = catalog.subcategories.filter((row) => row.category_id === categoryId);
+      if (siblings.some((row) => same(row.name, name))) {
+        setCatalogSaving(false);
+        setError("That subcategory already exists.");
+        return;
+      }
+      const result = await supabase.from("material_subcategories").insert({
+        category_id: categoryId,
+        name,
+        sort_order: nextOrder(siblings),
+      }).select("id, category_id, name, sort_order").single();
+      inserted = result.data;
+      saveErr = result.error;
+      if (inserted) {
+        setCatalog((prev) => ({ ...prev, subcategories: [...prev.subcategories, inserted] }));
+        pickSubcategory(inserted.id);
+      }
+    } else if (adding === "type") {
+      if (!subcategoryId) {
+        setCatalogSaving(false);
+        setError("Select a subcategory first.");
+        return;
+      }
+      const siblings = catalog.types.filter((row) => row.subcategory_id === subcategoryId);
+      if (siblings.some((row) => same(row.name, name))) {
+        setCatalogSaving(false);
+        setError("That type already exists.");
+        return;
+      }
+      const result = await supabase.from("material_types").insert({
+        subcategory_id: subcategoryId,
+        name,
+        sort_order: nextOrder(siblings),
+      }).select("id, subcategory_id, name, sort_order").single();
+      inserted = result.data;
+      saveErr = result.error;
+      if (inserted) {
+        setCatalog((prev) => ({ ...prev, types: [...prev.types, inserted] }));
+        setTypeId(inserted.id);
+      }
+    } else if (adding === "unit") {
+      if (!subcategoryId) {
+        setCatalogSaving(false);
+        setError("Select a subcategory first.");
+        return;
+      }
+      const siblings = catalog.units.filter((row) => row.subcategory_id === subcategoryId);
+      if (siblings.some((row) => same(row.unit, name))) {
+        setCatalogSaving(false);
+        setError("That unit already exists.");
+        return;
+      }
+      const result = await supabase.from("material_units").insert({
+        subcategory_id: subcategoryId,
+        unit: name,
+        sort_order: nextOrder(siblings),
+      }).select("id, subcategory_id, unit, sort_order").single();
+      inserted = result.data;
+      saveErr = result.error;
+      if (inserted) {
+        setCatalog((prev) => ({ ...prev, units: [...prev.units, inserted] }));
+        setUnit(inserted.unit);
+      }
+    }
+    setCatalogSaving(false);
+    if (saveErr) {
+      setError(saveErr.message || "Could not add that.");
+      return;
+    }
+    setDraftName("");
+    setAdding("");
+    showToast("Saved");
+  };
+
+  const save = async () => {
+    const category = catalog.categories.find((row) => row.id === categoryId);
+    const subcategory = catalog.subcategories.find((row) => row.id === subcategoryId);
+    const type = catalog.types.find((row) => row.id === typeId);
+    const qty = Number(quantity);
+    if (!category || !subcategory || !type || !unit || !Number.isFinite(qty) || qty <= 0) {
+      setError("Choose category, subcategory, type, unit, and a quantity.");
+      return;
+    }
+    setSaving(true);
+    setError("");
+    const { error: saveErr } = await supabase.from("site_material_arrivals").insert({
+      site_name: siteName || null,
+      user_name: userName || null,
+      recorded_by: recordedBy || null,
+      category_name: category.name,
+      subcategory_name: subcategory.name,
+      type_name: type.name,
+      quantity: qty,
+      unit,
+    });
+    setSaving(false);
+    if (saveErr) {
+      setError(saveErr.message || "Could not save material.");
+      return;
+    }
+    setQuantity("");
+    showToast("Saved");
+    await load();
+  };
+
+  return (
+    <ResizablePanel storageKey="pf-size-material" label="Arrived material">
+      <div className="pf-head pf-head-material">
+        <div className="pf-head-avatar">
+          <Ico name="box" />
+        </div>
+        <div className="pf-head-copy">
+          <div className="pf-head-title">Arrived material</div>
+          {sites.length > 1 ? (
+            <select
+              className="pf-head-site"
+              value={siteName}
+              aria-label="Site"
+              onChange={(event) => setSiteName(event.target.value)}
+            >
+              {sortedSites.map((name) => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          ) : (
+            <div className="pf-head-sub">{siteName || "Material received on site"}</div>
+          )}
+        </div>
+        <button className="pf-icon-btn" onClick={onClose} aria-label="Close">
+          <Ico name="close" />
+        </button>
+      </div>
+      <div className="pf-mat-tabs">
+        <button type="button" className={tab === "add" ? "is-on" : ""} onClick={() => setTab("add")}>Add</button>
+        <button type="button" className={tab === "records" ? "is-on" : ""} onClick={() => setTab("records")}>Records</button>
+      </div>
+      <div className="pf-body pf-mat-body">
+        {error && !adding && <div className="pf-mat-error">{error}</div>}
+        {tab === "records" ? (
+          <>
+            <input
+              className="pf-mat-search"
+              value={search}
+              placeholder="Search category, subcategory, type"
+              onChange={(event) => setSearch(event.target.value)}
+            />
+            <div className="pf-mat-filters">
+              <select
+                value={filterCategory}
+                aria-label="Filter category"
+                onChange={(event) => {
+                  setFilterCategory(event.target.value);
+                  setFilterSubcategory("");
+                  setFilterType("");
+                }}
+              >
+                <option value="">All categories</option>
+                {sortedCategories.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+              <select
+                value={filterSubcategory}
+                aria-label="Filter subcategory"
+                onChange={(event) => {
+                  setFilterSubcategory(event.target.value);
+                  setFilterType("");
+                }}
+              >
+                <option value="">All subcategories</option>
+                {sortedFilterSubcategories.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+              <select value={filterType} aria-label="Filter type" onChange={(event) => setFilterType(event.target.value)}>
+                <option value="">All types</option>
+                {sortedFilterTypes.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </div>
+            <button type="button" className="pf-mat-save" onClick={downloadExcel} disabled={!filteredRecords.length}>
+              Download Excel
+            </button>
+            <div className="pf-mat-table-wrap">
+              <table className="pf-mat-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Category</th>
+                    <th>Subcategory</th>
+                    <th>Type</th>
+                    <th>Qty</th>
+                    <th>Unit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredRecords.map((row) => (
+                    <tr key={row.id}>
+                      <td>{row.created_at ? new Date(row.created_at).toLocaleDateString("en-IN") : "—"}</td>
+                      <td>{row.category_name}</td>
+                      <td>{row.subcategory_name}</td>
+                      <td>{row.type_name}</td>
+                      <td>{row.quantity}</td>
+                      <td>{row.unit}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {loading && <div className="pf-empty">Loading…</div>}
+              {!loading && !filteredRecords.length && <div className="pf-empty">No material records match.</div>}
+            </div>
+          </>
+        ) : (
+          <>
+        <label className="pf-mat-field">
+          Category
+          <select
+            value={categoryId}
+            onChange={(event) => {
+              if (event.target.value === "__other") {
+                openAdd("category");
+                return;
+              }
+              pickCategory(event.target.value);
+            }}
+          >
+            <option value="__other">+ Other</option>
+            <option value="">Select category</option>
+            {sortedCategories.map((row) => (
+              <option key={row.id} value={row.id}>{row.name}</option>
+            ))}
+          </select>
+        </label>
+        {categoryId && (
+          <label className="pf-mat-field">
+            Subcategory
+            <select
+              value={subcategoryId}
+              onChange={(event) => {
+                if (event.target.value === "__other") {
+                  openAdd("subcategory");
+                  return;
+                }
+                pickSubcategory(event.target.value);
+              }}
+            >
+              <option value="__other">+ Other</option>
+              <option value="">{subcategories.length ? "Select subcategory" : "No subcategories yet"}</option>
+              {subcategories.map((row) => (
+                <option key={row.id} value={row.id}>{row.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {subcategoryId && (
+          <label className="pf-mat-field">
+            Type
+            <select
+              value={typeId}
+              onChange={(event) => {
+                if (event.target.value === "__other") {
+                  openAdd("type");
+                  return;
+                }
+                setTypeId(event.target.value);
+              }}
+            >
+              <option value="__other">+ Other</option>
+              <option value="">Select type</option>
+              {types.map((row) => (
+                <option key={row.id} value={row.id}>{row.name}</option>
+              ))}
+            </select>
+          </label>
+        )}
+        {typeId && (
+          <label className="pf-mat-field">
+            Quantity
+            <span className="pf-mat-qty">
+              <input
+                type="number"
+                min="0"
+                step="any"
+                value={quantity}
+                placeholder="0"
+                onChange={(event) => setQuantity(event.target.value)}
+              />
+              <select
+                value={unit}
+                aria-label="Unit"
+                onChange={(event) => {
+                  if (event.target.value === "__other") {
+                    openAdd("unit");
+                    return;
+                  }
+                  setUnit(event.target.value);
+                }}
+              >
+                <option value="__other">+ Other</option>
+                <option value="">Unit</option>
+                {units.map((item) => (
+                  <option key={item} value={item}>{item}</option>
+                ))}
+              </select>
+            </span>
+          </label>
+        )}
+        {typeId && (
+          <button type="button" className="pf-mat-save" disabled={saving} onClick={save}>
+            {saving ? "Saving…" : "Save"}
+          </button>
+        )}
+          </>
+        )}
+      </div>
+      {toast && <div className="pf-mat-toast" role="status">{toast}</div>}
+      {adding && (
+        <div className="pf-mat-pop" role="dialog" aria-label={`Add ${adding}`}>
+          <div className="pf-mat-pop-card">
+            <div className="pf-mat-pop-head">
+              <strong>Add {adding}</strong>
+              <button type="button" className="pf-mat-pop-close" onClick={closeAdd}>Close</button>
+            </div>
+            <input
+              className="pf-mat-pop-input"
+              value={draftName}
+              placeholder={`New ${adding}`}
+              autoFocus
+              onChange={(event) => setDraftName(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") addCatalog();
+              }}
+            />
+            {error && <div className="pf-mat-error">{error}</div>}
+            <button type="button" className="pf-mat-save" disabled={catalogSaving} onClick={addCatalog}>
+              {catalogSaving ? "Adding…" : "Add"}
+            </button>
+          </div>
+        </div>
+      )}
+    </ResizablePanel>
+  );
+}
+
 export default function PortalFloaters({ showBot = false, botScope = "admin" }) {
   const user = getStoredUser();
   const me = user?.user_name || user?.username;
+  const showMaterial = String(user?.department || "").trim().toLowerCase() === "site engineer";
   const [open, setOpen] = useState(null);
   const [unread, setUnread] = useState(0);
   const [unreadByUser, setUnreadByUser] = useState({});
@@ -2227,7 +2831,20 @@ export default function PortalFloaters({ showBot = false, botScope = "admin" }) 
           onGroupOpened={onGroupOpened}
         />
       )}
+      {showMaterial && open === "material" && (
+        <MaterialPanel user={user} onClose={() => setOpen(null)} />
+      )}
       <div className="pf-stack">
+        {showMaterial && (
+          <button
+            className={`pf-fab pf-fab-material${open === "material" ? " is-open" : ""}`}
+            onClick={() => setOpen((v) => (v === "material" ? null : "material"))}
+            title="Arrived material"
+            aria-label="Arrived material"
+          >
+            <Ico name="box" />
+          </button>
+        )}
         {showBot && (
           <button
             className={`pf-fab pf-fab-dip${open === "bot" ? " is-open" : ""}`}

@@ -570,7 +570,7 @@ function buildDateTree(items) {
     }));
 }
 
-function MediaFolderTree({ siteName, activeDate, onSelectDate }) {
+  function MediaFolderTree({ siteName, activeDate, onSelectDate }) {
   const [tree, setTree] = useState(null);
   const [openYears, setOpenYears] = useState({});
   const [openMonths, setOpenMonths] = useState({});
@@ -605,7 +605,7 @@ function MediaFolderTree({ siteName, activeDate, onSelectDate }) {
       }
 
       const filteredDprRows = (dprRows || []).filter((r) => r.report_type !== "morning");
-
+ 
       const dprPhotoRows = filteredDprRows.flatMap((report) => {
         const photos = Array.isArray(report?.payload?.photos)
           ? report.payload.photos

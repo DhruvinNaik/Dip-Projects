@@ -9386,7 +9386,7 @@ case "all-drawings":
           </div>
         </div>
       )}
-      <PortalFloaters />
+      <PortalFloaters showBot botScope="office" />
     </>
   );
 }

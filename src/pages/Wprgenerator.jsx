@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 // import * as XLSX from 'xlsx';
 import generatePPT from "./pptGenerator";
+import WprImageMarkup from "./WprImageMarkup";
 // ─── CSS ────────────────────────────────────────────────────────────────────
 import "./Wprgenerator.css";
 
@@ -2223,6 +2224,7 @@ function PhotoGrid({
   multiple = true,
   label = "Upload Photos",
   onLightbox,
+  onMark,
 }) {
   const fileRef = useRef();
   return (
@@ -2255,6 +2257,11 @@ function PhotoGrid({
               <button className="wpr-photo-del" onClick={() => onRemove(i)}>
                 ✕
               </button>
+              {onMark && (
+                <button type="button" className="wpr-photo-mark" onClick={() => onMark(i)}>
+                  Mark
+                </button>
+              )}
               <div className="wpr-photo-cap">
                 <input
                   value={ph.label || ph.caption || ""}
@@ -2286,6 +2293,7 @@ export default function WprGenerator({ user, supabase }) {
   const [siteImage, setSiteImage] = useState(null);
   const [activities, setActivities] = useState([]);
   const [graphicalImages, setGraphicalImages] = useState([]);
+  const [markupIndex, setMarkupIndex] = useState(null);
   const [sitePhotos, setSitePhotos] = useState([]);
   const [drawingHeaders, setDrawingHeaders] = useState([
     "Architect GFC Drawing",
@@ -3768,7 +3776,21 @@ const displayReportNo = zp(reportNum);
             }}
             label="Upload Graphical Images"
             onLightbox={(imgs, idx) => openLightbox(imgs, idx)}
+            onMark={(i) => setMarkupIndex(i)}
           />
+          {markupIndex != null && graphicalImages[markupIndex]?.dataUrl && (
+            <WprImageMarkup
+              imageUrl={graphicalImages[markupIndex].dataUrl}
+              onCancel={() => setMarkupIndex(null)}
+              onSave={(dataUrl) => {
+                setGraphicalImages((prev) =>
+                  prev.map((image, index) => (index === markupIndex ? { ...image, dataUrl } : image)),
+                );
+                setMarkupIndex(null);
+                showToast("Marked image saved. It uploads with the generated WPR.", "success");
+              }}
+            />
+          )}
         </Acc>
 
         {/* ④ SITE PHOTOGRAPHS */}

@@ -2933,7 +2933,7 @@ useEffect(() => {
           </main>
         </div>
       </div>
-      <PortalFloaters />
+      <PortalFloaters showBot botScope="site" />
     </>
   );
 }

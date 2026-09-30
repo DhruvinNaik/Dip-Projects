@@ -5,6 +5,7 @@ import { supabase } from "../supabase";
 import Navbar from "../components/Navbar";
 import PortalFloaters from "../components/PortalFloaters";
 import EmployeeDetailModal from "./EmployeeDetailModal";
+import HrAddEmployeeModal from "./HrAddEmployeeModal";
 import HrDocuments from "./HrDocuments";
 import HrInsurance, { daysUntilRenewal, renewalStatus } from "./HrInsurance";
 import HrExpenses from "./HrExpenses";
@@ -343,6 +344,8 @@ export default function HRPortal() {
   const [registerError, setRegisterError] = useState("");
   const [registerLoaded, setRegisterLoaded] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState(null);
+  const [showAddEmployee, setShowAddEmployee] = useState(false);
+  const [overviewTick, setOverviewTick] = useState(0);
   const [insuranceReminders, setInsuranceReminders] = useState([]);
   const [insuranceTick, setInsuranceTick] = useState(0);
 
@@ -791,7 +794,7 @@ export default function HRPortal() {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, overviewTick]);
 
   useEffect(() => {
     if (!user) return;
@@ -1272,6 +1275,9 @@ export default function HRPortal() {
                     <h2>Employees</h2>
                     <p className="hr-subtitle">{overview ? `${employeeList.length} of ${overview.users.length} employees` : "Loading employee records..."}</p>
                   </div>
+                  <button type="button" className="hr-primary-button" onClick={() => setShowAddEmployee(true)}>
+                    <Icon name="plus" size={16} /> Add Employee
+                  </button>
                 </div>
                 {employeeStatsError && <div className="hr-data-alert">Could not load attendance stats: {employeeStatsError}</div>}
                 <div className="hr-employee-grid">
@@ -1606,6 +1612,26 @@ export default function HRPortal() {
         <EmployeeDetailModal
           employee={selectedEmployee}
           onClose={() => setSelectedEmployee(null)}
+          onUpdated={(next) => {
+            setSelectedEmployee((current) => (current ? { ...current, ...next } : next));
+            setOverview((current) => {
+              if (!current) return current;
+              return {
+                ...current,
+                users: current.users.map((item) => (
+                  (next.id && item.id === next.id) || item.username === next.username
+                    ? { ...item, ...next }
+                    : item
+                )),
+              };
+            });
+          }}
+        />
+      )}
+      {showAddEmployee && (
+        <HrAddEmployeeModal
+          onClose={() => setShowAddEmployee(false)}
+          onSaved={() => setOverviewTick((tick) => tick + 1)}
         />
       )}
     </div>

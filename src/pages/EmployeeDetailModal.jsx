@@ -189,11 +189,66 @@ function SvgIcon({ name, size = 16 }) {
       </>
     ),
     plus: <path d="M12 5v14M5 12h14" />,
+    pencil: (
+      <>
+        <path d="M12 20h9" />
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" />
+      </>
+    ),
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
 
-export default function EmployeeDetailModal({ employee, onClose }) {
+const DEPARTMENTS = [
+  "Admin",
+  "Site Engineer",
+  "Project Head",
+  "Engineer Office",
+  "MDO Office",
+  "HR",
+  "Client",
+];
+
+const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const EMP_TYPES = ["Permanent", "Contract", "Intern", "Probation", "Consultant"];
+
+const INFO_FIELDS = [
+  { key: "name", label: "Full Name", store: "user", column: "name" },
+  { key: "emp_id", label: "Emp ID", store: "profile", column: "emp_id", fallback: ["employee_id", "employee_code", "id"] },
+  { key: "department", label: "Department", store: "user", column: "department", type: "department" },
+  { key: "designation", label: "Designation", store: "profile", column: "designation", fallback: ["role"] },
+  { key: "phone", label: "Phone", store: "profile", column: "phone", fallback: ["mobile", "contact", "phone_number"] },
+  { key: "email", label: "Email", store: "profile", column: "email", fallback: ["mail"] },
+  { key: "dob", label: "DOB", store: "profile", column: "dob", type: "date", fallback: ["date_of_birth", "birth_date"] },
+  { key: "joining_date", label: "Joining Date", store: "profile", column: "joining_date", type: "date", fallback: ["join_date", "date_of_joining", "created_at"] },
+  { key: "company", label: "Company", store: "profile", column: "company", fallback: ["company_name", "organization"] },
+  { key: "emp_type", label: "Emp Type", store: "profile", column: "emp_type", type: "emp_type", fallback: ["employment_type", "employee_type"] },
+  { key: "salary", label: "Salary", store: "profile", column: "salary", fallback: ["basic_salary", "ctc"] },
+  { key: "increment", label: "Increment", store: "profile", column: "increment", fallback: ["last_increment"] },
+  { key: "manager", label: "Manager", store: "profile", column: "manager", fallback: ["reporting_head", "reporting_manager", "head"] },
+  { key: "blood_group", label: "Blood Group", store: "profile", column: "blood_group", type: "blood", fallback: ["blood"] },
+  { key: "emergency", label: "Emergency", store: "profile", column: "emergency", fallback: ["emergency_contact", "emergency_phone"] },
+  { key: "pf_no", label: "PF No", store: "profile", column: "pf_no", fallback: ["pf_number", "uan", "pf"] },
+  { key: "esic_no", label: "ESIC No", store: "profile", column: "esic_no", fallback: ["esic_number", "esic"] },
+  { key: "bank", label: "Bank", store: "profile", column: "bank", fallback: ["bank_name"] },
+  { key: "ifsc", label: "IFSC", store: "profile", column: "ifsc", fallback: ["ifsc_code", "bank_ifsc"] },
+  { key: "acc_no", label: "Acc No", store: "profile", column: "acc_no", fallback: ["account_no", "account_number", "bank_account"] },
+];
+
+function rawFieldValue(field, record, profile) {
+  if (field.store === "user") return pick(record, field.column);
+  const stored = pick(profile, field.column);
+  if (stored != null) return stored;
+  return pick(record, field.column, ...(field.fallback || []));
+}
+
+function toDateInput(value) {
+  if (!value) return "";
+  const raw = String(value).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : "";
+}
+
+export default function EmployeeDetailModal({ employee, onClose, onUpdated }) {
   const [tab, setTab] = useState("info");
   const [attYear, setAttYear] = useState(() => new Date().getFullYear());
   const [attMonth, setAttMonth] = useState(() => new Date().getMonth() + 1);
@@ -208,35 +263,52 @@ export default function EmployeeDetailModal({ employee, onClose }) {
   const [docsError, setDocsError] = useState("");
   const [uploadingKey, setUploadingKey] = useState("");
   const [toast, setToast] = useState("");
+  const [record, setRecord] = useState(employee);
+  const [profile, setProfile] = useState(null);
+  const [editingKey, setEditingKey] = useState("");
+  const [draft, setDraft] = useState("");
+  const [savingKey, setSavingKey] = useState("");
   const fileRefs = useRef({});
 
-  const username = pick(employee, "username", "user_name") || "";
-  const fullName = pick(employee, "name", "full_name") || username || "Employee";
+  const username = pick(record, "username", "user_name") || "";
+  const fullName = pick(record, "name", "full_name") || username || "Employee";
+
+  useEffect(() => {
+    setRecord(employee);
+  }, [employee]);
+
+  useEffect(() => {
+    if (!username) return undefined;
+    let cancelled = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from("hr_employee_profiles")
+        .select("*")
+        .eq("user_name", username)
+        .maybeSingle();
+      if (cancelled) return;
+      if (error) {
+        setProfile(null);
+        return;
+      }
+      setProfile(data || null);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [username]);
 
   const infoFields = useMemo(
-    () => [
-      { label: "Full Name", value: fullName },
-      { label: "Emp ID", value: pick(employee, "emp_id", "employee_id", "employee_code", "id") },
-      { label: "Department", value: pick(employee, "department") },
-      { label: "Designation", value: pick(employee, "designation", "role") },
-      { label: "Phone", value: pick(employee, "phone", "mobile", "contact", "phone_number") },
-      { label: "Email", value: pick(employee, "email", "mail") },
-      { label: "DOB", value: formatDate(pick(employee, "dob", "date_of_birth", "birth_date")) },
-      { label: "Joining Date", value: formatDate(pick(employee, "joining_date", "join_date", "date_of_joining", "created_at")) },
-      { label: "Company", value: pick(employee, "company", "company_name", "organization") },
-      { label: "Emp Type", value: pick(employee, "emp_type", "employment_type", "employee_type", "type") },
-      { label: "Salary", value: pick(employee, "salary", "basic_salary", "ctc") },
-      { label: "Increment", value: pick(employee, "increment", "last_increment") },
-      { label: "Manager", value: pick(employee, "manager", "reporting_head", "reporting_manager", "head") },
-      { label: "Blood Group", value: pick(employee, "blood_group", "blood") },
-      { label: "Emergency", value: pick(employee, "emergency", "emergency_contact", "emergency_phone") },
-      { label: "PF No", value: pick(employee, "pf_no", "pf_number", "uan", "pf") },
-      { label: "ESIC No", value: pick(employee, "esic_no", "esic_number", "esic") },
-      { label: "Bank", value: pick(employee, "bank", "bank_name") },
-      { label: "IFSC", value: pick(employee, "ifsc", "ifsc_code", "bank_ifsc") },
-      { label: "Acc No", value: pick(employee, "acc_no", "account_no", "account_number", "bank_account") },
-    ],
-    [employee, fullName],
+    () => INFO_FIELDS.map((field) => {
+      let raw = rawFieldValue(field, record, profile);
+      if (field.key === "emp_id" && /^[0-9a-f]{8}-/i.test(String(raw || ""))) raw = null;
+      return {
+        ...field,
+        raw,
+        value: field.type === "date" ? formatDate(raw) : raw,
+      };
+    }),
+    [record, profile],
   );
 
   const showToast = (msg) => {
@@ -413,6 +485,55 @@ export default function EmployeeDetailModal({ employee, onClose }) {
     return first.getDay();
   }, [attYear, attMonth]);
 
+  const startEdit = (field) => {
+    setEditingKey(field.key);
+    setDraft(field.type === "date" ? toDateInput(field.raw) : (field.raw == null ? "" : String(field.raw)));
+  };
+
+  const saveField = async (field) => {
+    if (!username) return;
+    const value = String(draft ?? "").trim();
+    const stored = field.type === "date" ? (value || null) : value;
+    setSavingKey(field.key);
+    if (field.store === "user") {
+      let query = supabase.from("user_details").update({ [field.column]: stored || null });
+      query = record.id ? query.eq("id", record.id) : query.eq("username", username);
+      const { error } = await query;
+      setSavingKey("");
+      if (error) {
+        showToast(error.message || "Could not save.");
+        return;
+      }
+      const next = { ...record, [field.column]: stored };
+      setRecord(next);
+      setEditingKey("");
+      onUpdated?.(next);
+      showToast("Saved");
+      return;
+    }
+
+    const payload = {
+      user_name: username,
+      [field.column]: stored,
+      updated_at: new Date().toISOString(),
+    };
+    const { data, error } = await supabase
+      .from("hr_employee_profiles")
+      .upsert(payload, { onConflict: "user_name" })
+      .select("*")
+      .maybeSingle();
+    setSavingKey("");
+    if (error) {
+      showToast(error.message || "Run supabase/hr_employee_profiles.sql in the Supabase SQL editor.");
+      return;
+    }
+    const nextProfile = { ...(profile || {}), ...(data || payload) };
+    setProfile(nextProfile);
+    setEditingKey("");
+    onUpdated?.({ ...record, ...nextProfile, username });
+    showToast("Saved");
+  };
+
   const handleAction = (label) => {
     showToast(`${label} will open here once the template is connected.`);
   };
@@ -456,7 +577,7 @@ export default function EmployeeDetailModal({ employee, onClose }) {
             <div className="edm-avatar">{fullName.split(" ").filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase()}</div>
             <div>
               <h2>{fullName}</h2>
-              <p>{display(pick(employee, "designation", "role", "department"))}</p>
+              <p>{display(pick(profile, "designation") || pick(record, "designation", "role", "department"))}</p>
             </div>
           </div>
           <button type="button" className="edm-close" onClick={onClose} aria-label="Close">
@@ -494,9 +615,48 @@ export default function EmployeeDetailModal({ employee, onClose }) {
             <div className="edm-section">
               <div className="edm-info-grid">
                 {infoFields.map((field) => (
-                  <div className="edm-info-item" key={field.label}>
-                    <span>{field.label}</span>
-                    <strong>{display(field.value)}</strong>
+                  <div className="edm-info-item" key={field.key}>
+                    <span>
+                      {field.label}
+                      {editingKey !== field.key && (
+                        <button
+                          type="button"
+                          className="edm-info-edit"
+                          aria-label={`Edit ${field.label}`}
+                          onClick={() => startEdit(field)}
+                        >
+                          <SvgIcon name="pencil" size={13} />
+                        </button>
+                      )}
+                    </span>
+                    {editingKey === field.key ? (
+                      <div className="edm-info-editor">
+                        {field.type === "department" || field.type === "blood" || field.type === "emp_type" ? (
+                          <select value={draft} onChange={(event) => setDraft(event.target.value)}>
+                            <option value="">Select</option>
+                            {(field.type === "department" ? DEPARTMENTS : field.type === "blood" ? BLOOD_GROUPS : EMP_TYPES)
+                              .concat(draft && !(field.type === "department" ? DEPARTMENTS : field.type === "blood" ? BLOOD_GROUPS : EMP_TYPES).includes(draft) ? [draft] : [])
+                              .map((option) => (
+                                <option key={option} value={option}>{option}</option>
+                              ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={field.type === "date" ? "date" : "text"}
+                            value={draft}
+                            onChange={(event) => setDraft(event.target.value)}
+                          />
+                        )}
+                        <div className="edm-info-editor-actions">
+                          <button type="button" className="edm-info-save" disabled={savingKey === field.key} onClick={() => saveField(field)}>
+                            {savingKey === field.key ? "Saving…" : "Save"}
+                          </button>
+                          <button type="button" className="edm-info-cancel" onClick={() => setEditingKey("")}>Cancel</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <strong>{display(field.value)}</strong>
+                    )}
                   </div>
                 ))}
               </div>

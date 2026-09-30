@@ -93,12 +93,17 @@ function boxFrom(start, end) {
 
 export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   const canvasRef = useRef(null);
+  const stageRef = useRef(null);
   const imgRef = useRef(null);
   const startRef = useRef(null);
   const draftRef = useRef(null);
   const toolRef = useRef("rect");
   const colorRef = useRef(COLORS[0]);
   const marksRef = useRef([]);
+  const pointersRef = useRef(new Map());
+  const pinchRef = useRef(null);
+  const suppressDrawRef = useRef(false);
+  const zoomRef = useRef(1);
   const [ready, setReady] = useState(false);
   const [tool, setTool] = useState("rect");
   const [color, setColor] = useState(COLORS[0]);
@@ -106,8 +111,11 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   const [draft, setDraft] = useState(null);
   const [textBox, setTextBox] = useState(null);
   const [selectedText, setSelectedText] = useState(null);
+  const [zoom, setZoom] = useState(1);
+  const [viewTick, setViewTick] = useState(0);
   const [error, setError] = useState("");
   const dragRef = useRef(null);
+  zoomRef.current = zoom;
 
   toolRef.current = tool;
   colorRef.current = color;
@@ -127,22 +135,169 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     const img = imgRef.current;
     const canvas = canvasRef.current;
     if (!ready || !img || !canvas) return;
-    const maxW = Math.min(980, window.innerWidth - 48);
-    const maxH = Math.min(620, window.innerHeight - 230);
-    const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+    const stage = stageRef.current;
+    const maxW = Math.max(160, (stage?.clientWidth || window.innerWidth - 32) - 8);
+    const maxH = Math.min(620, Math.max(220, window.innerHeight * 0.5));
+    const fit = Math.min(maxW / img.width, maxH / img.height, 1);
+    const scale = fit * zoom;
     canvas.width = img.width;
     canvas.height = img.height;
-    canvas.style.width = `${Math.round(img.width * scale)}px`;
-    canvas.style.height = `${Math.round(img.height * scale)}px`;
+    canvas.style.width = `${Math.max(1, Math.round(img.width * scale))}px`;
+    canvas.style.height = `${Math.max(1, Math.round(img.height * scale))}px`;
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0);
     [...marks, draft].filter(Boolean).forEach((mark, index) => drawMark(ctx, mark, index === selectedText));
-  }, [ready, marks, draft, selectedText]);
+  }, [ready, marks, draft, selectedText, zoom]);
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    const bump = () => setViewTick((tick) => tick + 1);
+    stage?.addEventListener("scroll", bump, { passive: true });
+    window.addEventListener("resize", bump);
+    return () => {
+      stage?.removeEventListener("scroll", bump);
+      window.removeEventListener("resize", bump);
+    };
+  }, [ready]);
+
+  const changeZoom = (next, clientX, clientY) => {
+    const stage = stageRef.current;
+    const prev = zoomRef.current || 1;
+    const clamped = Math.min(4, Math.max(0.5, next));
+    if (!stage) {
+      zoomRef.current = clamped;
+      setZoom(clamped);
+      return;
+    }
+    const stageRect = stage.getBoundingClientRect();
+    const px = clientX == null ? stageRect.left + stage.clientWidth / 2 : clientX;
+    const py = clientY == null ? stageRect.top + stage.clientHeight / 2 : clientY;
+    const ratio = clamped / prev;
+    const ox = px - stageRect.left + stage.scrollLeft;
+    const oy = py - stageRect.top + stage.scrollTop;
+    zoomRef.current = clamped;
+    setZoom(clamped);
+    requestAnimationFrame(() => {
+      stage.scrollLeft = ox * ratio - (px - stageRect.left);
+      stage.scrollTop = oy * ratio - (py - stageRect.top);
+    });
+  };
+
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!ready || !stage) return undefined;
+
+    const fingerPoint = (touch) => ({ x: touch.clientX, y: touch.clientY });
+    const beginPinch = (touches) => {
+      const a = fingerPoint(touches[0]);
+      const b = fingerPoint(touches[1]);
+      pinchRef.current = {
+        dist: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
+        zoom: zoomRef.current || 1,
+        midX: (a.x + b.x) / 2,
+        midY: (a.y + b.y) / 2,
+        scrollLeft: stage.scrollLeft,
+        scrollTop: stage.scrollTop,
+      };
+      startRef.current = null;
+      draftRef.current = null;
+      dragRef.current = null;
+      suppressDrawRef.current = true;
+      setDraft(null);
+    };
+    const movePinch = (touches) => {
+      const pinch = pinchRef.current;
+      if (!pinch) return;
+      const a = fingerPoint(touches[0]);
+      const b = fingerPoint(touches[1]);
+      const dist = Math.hypot(a.x - b.x, a.y - b.y);
+      const midX = (a.x + b.x) / 2;
+      const midY = (a.y + b.y) / 2;
+      const next = Math.min(4, Math.max(0.5, pinch.zoom * (dist / pinch.dist)));
+      const ratio = next / (pinch.zoom || 1);
+      const stageRect = stage.getBoundingClientRect();
+      const ox = pinch.midX - stageRect.left + pinch.scrollLeft;
+      const oy = pinch.midY - stageRect.top + pinch.scrollTop;
+      zoomRef.current = next;
+      setZoom(next);
+      stage.scrollLeft = ox * ratio - (midX - stageRect.left);
+      stage.scrollTop = oy * ratio - (midY - stageRect.top);
+    };
+    const onTouchStart = (event) => {
+      if (event.touches.length < 2) return;
+      event.preventDefault();
+      beginPinch(event.touches);
+    };
+    const onTouchMove = (event) => {
+      if (event.touches.length < 2) return;
+      event.preventDefault();
+      if (!pinchRef.current) beginPinch(event.touches);
+      movePinch(event.touches);
+    };
+    const onTouchEnd = (event) => {
+      if (event.touches.length >= 2) {
+        beginPinch(event.touches);
+        return;
+      }
+      if (pinchRef.current) {
+        pinchRef.current = null;
+        startRef.current = null;
+        draftRef.current = null;
+        dragRef.current = null;
+        setDraft(null);
+      }
+    };
+    const onWheel = (event) => {
+      event.preventDefault();
+      const prev = zoomRef.current || 1;
+      const step = event.deltaY > 0 ? -0.12 : 0.12;
+      const stageRect = stage.getBoundingClientRect();
+      const px = event.clientX;
+      const py = event.clientY;
+      const next = Math.min(4, Math.max(0.5, prev + step));
+      const ratio = next / prev;
+      const ox = px - stageRect.left + stage.scrollLeft;
+      const oy = py - stageRect.top + stage.scrollTop;
+      zoomRef.current = next;
+      setZoom(next);
+      stage.scrollLeft = ox * ratio - (px - stageRect.left);
+      stage.scrollTop = oy * ratio - (py - stageRect.top);
+    };
+
+    stage.addEventListener("touchstart", onTouchStart, { passive: false });
+    stage.addEventListener("touchmove", onTouchMove, { passive: false });
+    stage.addEventListener("touchend", onTouchEnd);
+    stage.addEventListener("touchcancel", onTouchEnd);
+    stage.addEventListener("wheel", onWheel, { passive: false });
+    return () => {
+      stage.removeEventListener("touchstart", onTouchStart);
+      stage.removeEventListener("touchmove", onTouchMove);
+      stage.removeEventListener("touchend", onTouchEnd);
+      stage.removeEventListener("touchcancel", onTouchEnd);
+      stage.removeEventListener("wheel", onWheel);
+    };
+  }, [ready]);
 
   const strokeWidth = () => Math.max(4, (imgRef.current?.width || 800) * 0.004);
   const textSize = () => Math.max(22, Math.round((imgRef.current?.width || 800) * 0.028));
+
+  const clampTextInside = (mark) => {
+    const canvas = canvasRef.current;
+    if (!canvas || mark?.type !== "text") return mark;
+    const ctx = canvas.getContext("2d");
+    let next = { ...mark, size: mark.size || textSize() };
+    for (let pass = 0; pass < 8; pass += 1) {
+      const box = textBoxOf(ctx, next);
+      if (box.w <= canvas.width - 8 && box.h <= canvas.height - 8) break;
+      next = { ...next, size: Math.max(14, Math.round(next.size * 0.86)) };
+    }
+    const box = textBoxOf(ctx, next);
+    next.x = Math.min(Math.max(4, next.x), Math.max(4, canvas.width - box.w - 4));
+    next.y = Math.min(Math.max(4, next.y), Math.max(4, canvas.height - box.h - 4));
+    return next;
+  };
 
   const pointFrom = (event) => {
     const canvas = canvasRef.current;
@@ -167,6 +322,14 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   };
 
   const onPointerDown = (event) => {
+    pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    if (pinchRef.current || pointersRef.current.size >= 2) {
+      startRef.current = null;
+      draftRef.current = null;
+      dragRef.current = null;
+      setDraft(null);
+      return;
+    }
     if (!ready || textBox) return;
     const point = pointFrom(event);
     const hit = hitText(point);
@@ -208,12 +371,17 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   };
 
   const onPointerMove = (event) => {
+    if (pointersRef.current.has(event.pointerId)) {
+      pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    }
+    if (pinchRef.current || pointersRef.current.size >= 2) return;
     if (dragRef.current) {
       const point = pointFrom(event);
       const { index, dx, dy } = dragRef.current;
-      setMarks((prev) => prev.map((mark, item) => (
-        item === index ? { ...mark, x: point.x - dx, y: point.y - dy } : mark
-      )));
+      setMarks((prev) => prev.map((mark, item) => {
+        if (item !== index) return mark;
+        return clampTextInside({ ...mark, x: point.x - dx, y: point.y - dy });
+      }));
       return;
     }
     if (!startRef.current || toolRef.current === "text") return;
@@ -232,7 +400,16 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     setDraft(next);
   };
 
-  const onPointerUp = () => {
+  const onPointerUp = (event) => {
+    pointersRef.current.delete(event.pointerId);
+    if (pinchRef.current || suppressDrawRef.current) {
+      dragRef.current = null;
+      startRef.current = null;
+      draftRef.current = null;
+      setDraft(null);
+      if (pointersRef.current.size === 0) suppressDrawRef.current = false;
+      return;
+    }
     if (dragRef.current) {
       dragRef.current = null;
       return;
@@ -253,21 +430,21 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     if (value) {
       if (textBox.editIndex != null) {
         setMarks((prev) => prev.map((mark, index) => (
-          index === textBox.editIndex ? { ...mark, text: value } : mark
+          index === textBox.editIndex ? clampTextInside({ ...mark, text: value }) : mark
         )));
         setSelectedText(textBox.editIndex);
       } else {
         setSelectedText(marksRef.current.length);
         setMarks((prev) => [
           ...prev,
-          {
+          clampTextInside({
             type: "text",
             x: textBox.x,
             y: textBox.y,
             text: value,
             color: colorRef.current,
             size: textSize(),
-          },
+          }),
         ]);
       }
     }
@@ -278,7 +455,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     if (selectedText == null) return;
     setMarks((prev) => prev.map((mark, index) => {
       if (index !== selectedText || mark.type !== "text") return mark;
-      return { ...mark, size: Math.min(140, Math.max(16, (mark.size || textSize()) + delta)) };
+      return clampTextInside({ ...mark, size: Math.min(140, Math.max(16, (mark.size || textSize()) + delta)) });
     }));
   };
 
@@ -305,10 +482,11 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     const pending = textBox?.value?.trim();
     let list = marks;
     if (pending && textBox.editIndex != null) {
-      list = marks.map((mark, index) => (index === textBox.editIndex ? { ...mark, text: pending } : mark));
+      list = marks.map((mark, index) => (index === textBox.editIndex ? clampTextInside({ ...mark, text: pending }) : mark));
     } else if (pending) {
-      list = [...marks, { type: "text", x: textBox.x, y: textBox.y, text: pending, color, size: textSize() }];
+      list = [...marks, clampTextInside({ type: "text", x: textBox.x, y: textBox.y, text: pending, color, size: textSize() })];
     }
+    list = list.map((mark) => (mark.type === "text" ? clampTextInside(mark) : mark));
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -323,7 +501,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
         <header className="wpr-mark-head">
           <div>
             <strong>Mark work sections</strong>
-            <p>Squares and circles stay lightly filled. Drag a note to move it, or double-click it to edit the words.</p>
+            <p>Pinch or drag with two fingers to zoom. On a computer, use the mouse wheel. Marks stay with the image.</p>
           </div>
           <button type="button" className="wpr-mark-x" onClick={onCancel} aria-label="Close">×</button>
         </header>
@@ -350,13 +528,16 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
               />
             ))}
           </span>
+          <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(Math.round((zoom - 0.25) * 100) / 100)}>Zoom out</button>
+          <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button>
+          <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(Math.round((zoom + 0.25) * 100) / 100)}>Zoom in</button>
           <button type="button" className="wpr-mark-tool" onClick={() => resizeText(-4)} disabled={selectedText == null}>Smaller</button>
           <button type="button" className="wpr-mark-tool" onClick={() => resizeText(4)} disabled={selectedText == null}>Larger</button>
           <button type="button" className="wpr-mark-tool" onClick={editSelectedText} disabled={selectedText == null}>Edit text</button>
           <button type="button" className="wpr-mark-tool" onClick={() => { setMarks((prev) => prev.slice(0, -1)); setSelectedText(null); }} disabled={!marks.length}>Undo</button>
           <button type="button" className="wpr-mark-tool" onClick={() => { setMarks([]); setDraft(null); }} disabled={!marks.length}>Clear</button>
         </div>
-        <div className="wpr-mark-stage">
+        <div className="wpr-mark-stage" ref={stageRef}>
           {error ? <p className="wpr-mark-error">{error}</p> : <canvas
             ref={canvasRef}
             className={`wpr-mark-canvas is-${tool}`}
@@ -385,7 +566,21 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
         {textBox && (
           <form
             className="wpr-mark-text"
-            style={{ left: textBox.left, top: textBox.top }}
+            style={(() => {
+              const canvas = canvasRef.current;
+              const formW = Math.min(280, window.innerWidth - 16);
+              void viewTick;
+              const formH = 46;
+              if (!canvas) return { left: 8, top: 8, width: formW };
+              const rect = canvas.getBoundingClientRect();
+              const rawLeft = rect.left + (textBox.x / canvas.width) * rect.width;
+              const rawTop = rect.top + (textBox.y / canvas.height) * rect.height;
+              return {
+                left: Math.max(8, Math.min(rawLeft, window.innerWidth - formW - 8)),
+                top: Math.max(8, Math.min(rawTop, window.innerHeight - formH - 8)),
+                width: formW,
+              };
+            })()}
             onSubmit={(event) => { event.preventDefault(); commitText(); }}
           >
             <input

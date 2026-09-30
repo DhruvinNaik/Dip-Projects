@@ -51,12 +51,12 @@
 .wpr-mark-colors { display:inline-flex; gap:6px; margin-left:4px; }
 .wpr-mark-swatch { width:22px; height:22px; border-radius:50%; border:2px solid #fff; box-shadow:0 0 0 1px #d6d3d1; cursor:pointer; padding:0; }
 .wpr-mark-swatch.is-on { box-shadow:0 0 0 2px #c96a10; }
-.wpr-mark-stage { display:grid; place-items:center; padding:16px; background:#fafaf9; min-height:240px; }
-.wpr-mark-canvas { background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,.12); touch-action:none; cursor:crosshair; }
+.wpr-mark-stage { display:flex; align-items:flex-start; justify-content:flex-start; padding:12px; background:#fafaf9; min-height:240px; max-height:58vh; overflow:auto; touch-action:none; }
+.wpr-mark-canvas { margin:auto; background:#fff; border-radius:8px; box-shadow:0 8px 24px rgba(15,23,42,.12); touch-action:none; cursor:crosshair; flex:0 0 auto; }
 .wpr-mark-canvas.is-text { cursor:text; }
 .wpr-mark-error { color:#b91c1c; font-size:13px; font-weight:700; }
-.wpr-mark-text { position:fixed; z-index:12010; display:flex; gap:6px; }
-.wpr-mark-text input { border:1px solid #c96a10; border-radius:8px; padding:6px 8px; font-size:13px; min-width:180px; }
+.wpr-mark-text { position:fixed; z-index:12010; display:flex; gap:6px; max-width:calc(100vw - 16px); }
+.wpr-mark-text input { border:1px solid #c96a10; border-radius:8px; padding:6px 8px; font-size:13px; width:min(200px, calc(100vw - 96px)); min-width:0; flex:1 1 auto; }
 .wpr-mark-text button, .wpr-mark-save { border:none; background:#c96a10; color:#fff; border-radius:8px; padding:7px 12px; font-size:12px; font-weight:700; cursor:pointer; }
 .wpr-mark-foot { border-top:1px solid #e7e5e4; justify-content:flex-end; }
 .wpr-mark-cancel { border:1px solid #e7e5e4; background:#fff; color:#44403c; border-radius:8px; padding:8px 14px; font-weight:700; cursor:pointer; }

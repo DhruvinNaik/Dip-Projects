@@ -516,7 +516,11 @@ function DipPanel({ user, onClose, scope = "admin" }) {
     setMessages((prev) => [...prev, { role: "user", text }]);
     setBusy(true);
     try {
-      const answer = await answerDipQuery(text, user, { scope });
+      const history = messages
+        .filter((item) => item.text && (item.role === "user" || item.role === "bot"))
+        .slice(-6)
+        .map((item) => ({ role: item.role === "bot" ? "assistant" : "user", content: item.text }));
+      const answer = await answerDipQuery(text, user, { scope, history });
       setMessages((prev) => [...prev, { role: "bot", ...answer }]);
     } catch (err) {
       setMessages((prev) => [

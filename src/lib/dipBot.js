@@ -77,6 +77,15 @@ function asksOwnLeaveBalance(q) {
   return aboutBalance && aboutMe;
 }
 
+function asksForSummary(q) {
+  return /\b(count|counts|total|how many|how much|ketla|ketli|ketlu|number of)\b/.test(q);
+}
+
+function replyText(answer) {
+  if (!answer) return answer;
+  return { text: answer.text, chips: answer.chips };
+}
+
 function countLeaveDays(fromDate, toDate) {
   if (!fromDate || !toDate) return 0;
   const from = new Date(`${String(fromDate).slice(0, 10)}T00:00:00`);
@@ -587,27 +596,50 @@ async function answerSiteDipQuery(rawText, user) {
     };
   }
 
-  if (/\b(material|arrived|receipt|cement|sand|steel|tiles|ply)\b/.test(q)) {
+  if (/\b(material|arrived|receipt|cement|sand|steel|tiles|ply|civil|electric|plumbing|flooring|furniture)\b/.test(q)) {
     let list = ctx.materials.filter((row) => inFocus(row.site_name));
-    const words = q.split(/\s+/).filter((word) => word.length > 2 && !["material", "arrived", "receipt", "show", "latest", "site"].includes(word));
+    const categoryWord = ["civil", "electric", "plumbing", "flooring", "furniture"].find((word) => q.includes(word));
+    if (categoryWord) list = list.filter((row) => norm(row.category_name).includes(categoryWord));
+    const skip = new Set(["material", "arrived", "receipt", "receipts", "show", "latest", "site", "sites", "what", "the", "total", "count", "counts", "how", "many", "much", "number", "ketla", "ketli", "ketlu", "for", "from", "this", "that", "with", "and", "all"]);
+    const words = q.split(/\s+/).filter((word) => word.length > 2 && !skip.has(word) && word !== categoryWord);
     if (words.length) {
       const narrowed = list.filter((row) => {
         const blob = norm([row.category_name, row.subcategory_name, row.type_name, row.unit].join(" "));
-        return words.some((word) => blob.includes(word));
+        return words.every((word) => blob.includes(word));
       });
-      if (narrowed.length) list = narrowed;
+      if (narrowed.length || words.length === 1) list = narrowed;
     }
-    list = list.slice(0, 25);
-    const rows = list.map((row) => ({
+    const total = list.length;
+    const label = categoryWord ? `${titleCase(categoryWord)} ` : "";
+    const where = focus ? ` at ${focus}` : "";
+    if (asksForSummary(q)) {
+      const sums = new Map();
+      list.forEach((row) => {
+        const key = `${row.unit || "units"}`;
+        sums.set(key, (sums.get(key) || 0) + (Number(row.quantity) || 0));
+      });
+      const qty = [...sums.entries()]
+        .filter(([, amount]) => amount)
+        .map(([unit, amount]) => `${amount} ${unit}`)
+        .join(", ");
+      const countLine = total
+        ? `${label}arrived material count is ${total}${where}.`
+        : `No ${label}arrived material matched that${where}.`;
+      const wantsQuantity = /\b(total|how much)\b/.test(q) && !/\b(count|counts|how many|ketla|ketli|ketlu|number of)\b/.test(q);
+      const text = qty && wantsQuantity ? `${countLine} Quantity: ${qty}.` : countLine;
+      return { text, chips: DIP_SITE_CHIPS };
+    }
+    const shown = list.slice(0, 25);
+    const rows = shown.map((row) => ({
       Date: prettyDateTime(row.created_at),
       Site: row.site_name || "—",
       Material: [row.subcategory_name, row.type_name].filter(Boolean).join(" · ") || row.category_name || "—",
       Qty: `${row.quantity ?? ""} ${row.unit || ""}`.trim(),
       By: row.recorded_by || "—",
     }));
-    const tbl = table(["Date", "Site", "Material", "Qty", "By"], rows, "No arrived material matched that.");
+    const tbl = table(["Date", "Site", "Material", "Qty", "By"], rows, `No ${label}arrived material matched that.`);
     return {
-      text: tbl.rows ? `${list.length} material receipt${list.length === 1 ? "" : "s"}${focus ? ` at ${focus}` : ""}.` : tbl.text,
+      text: tbl.rows ? `${total} ${label}material receipt${total === 1 ? "" : "s"}${where}.` : tbl.text,
       ...tbl,
       chips: DIP_SITE_CHIPS,
     };
@@ -1389,209 +1421,311 @@ function take(list, count) {
   return (list || []).slice(0, count);
 }
 
-function taskBrief(tasks, users) {
-  const sorted = [...(tasks || [])].sort((a, b) => String(b.created_at || "").localeCompare(String(a.created_at || "")));
-  return take(sorted, 80).map((task) => ({
-    title: task.title || "Untitled",
-    assignedTo: displayName({ users }, task.assigned_to),
-    due: task.due_date || "",
-    status: task.status || "",
-    site: task.site_name || "",
-    type: task.kind || "",
-    createdAt: task.created_at || "",
-  }));
+
+const LOOKUP_DATASETS = {
+  site: ["material", "daily_reports", "weekly_reports", "site_visits", "tasks", "leaves", "tickets", "team", "profile"],
+  office: ["tasks", "leaves", "tickets", "attendance", "profile"],
+  hr: ["employees", "attendance", "leaves", "expenses", "documents"],
+  admin: ["employees", "sites", "tasks", "leaves", "tickets", "attendance", "expenses"],
+};
+
+function lookupArgs(raw) {
+  if (!raw) return {};
+  if (typeof raw === "object") return raw;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
 }
 
-function leaveBrief(leaves) {
-  return take(leaves, 60).map((leave) => ({
-    name: leave.name || leave.user_name || "",
-    type: leave.leave_type || "",
-    from: leave.from_date || "",
-    to: leave.to_date || "",
-    status: computeLeaveStatus(leave),
-    site: leave.site_name || "",
-  }));
+function hasText(value, needle) {
+  const wanted = norm(needle);
+  if (!wanted) return true;
+  return norm(value).includes(wanted);
 }
 
-async function briefFor(scope, user) {
-  const today = ymd();
-  if (scope === "hr") {
-    const ctx = await loadHrContext();
-    const todayRows = ctx.attendance.filter((row) => String(row.date || "").slice(0, 10) === today);
-    return {
-      today,
-      employees: take(ctx.users, 250).map((person) => ({
-        name: person.name,
-        username: person.username,
-        role: person.role,
-        department: person.department,
-        site: person.site_name,
-        status: person.status,
-      })),
-      attendanceToday: take(todayRows, 200).map((row) => ({
-        name: row.name || row.user_name,
-        status: attendanceStatus(row),
-        in: fmtClock(row.clock_in),
-        out: fmtClock(row.clock_out),
-      })),
-      recentAttendance: take(ctx.attendance, 120).map((row) => ({
-        name: row.name || row.user_name,
-        date: row.date,
-        status: attendanceStatus(row),
-        in: fmtClock(row.clock_in),
-        out: fmtClock(row.clock_out),
-      })),
-      leaves: leaveBrief(ctx.leaves),
-      expenses: take(ctx.expenses, 40).map((row) => ({
-        employee: row.employee_name || row.user_name || row.name,
-        category: row.category,
-        amount: row.amount,
-        status: row.status,
-        date: row.expense_date || row.date || row.created_at,
-      })),
-    };
+function withinDates(value, from, to) {
+  if (!from && !to) return true;
+  const date = String(value || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+  if (from && date < String(from).slice(0, 10)) return false;
+  if (to && date > String(to).slice(0, 10)) return false;
+  return true;
+}
+
+function personOk(fields, person) {
+  if (!person) return true;
+  return fields.some((field) => hasText(field, person));
+}
+
+function taskStatusOk(task, status) {
+  const wanted = norm(status);
+  if (!wanted) return true;
+  const current = norm(task.status);
+  if (wanted === "open") return current === "pending" || current === "in_progress";
+  if (wanted === "overdue" || wanted === "delayed") {
+    const due = String(task.due_date || "").slice(0, 10);
+    return !!due && due < ymd() && !["completed", "not_applicable"].includes(current);
   }
-  if (scope === "site") {
-    const ctx = await loadSiteContext(user);
-    if (ctx.empty) return { today, sites: [], note: "No site is assigned to this user." };
-    const weekFrom = startOfWeek(today);
-    const weekTo = addDays(weekFrom, 6);
-    const dailyThisWeek = ctx.dprs.filter((row) => {
-      const date = String(row.date || "").slice(0, 10);
-      return date >= weekFrom && date <= weekTo;
-    });
-    const balance = await ownLeaveBalanceAnswer(user, []);
-    return {
-      today,
-      weekFrom,
-      weekTo,
-      sites: ctx.mine,
-      note: "athvadia or athvadiana means this week. A question about baki, rahieli, left, or remaining leave is the viewer's own balance in myLeaveBalance, not the people-on-leave list. dailyReportsThisWeek is the count for that question.",
-      myLeaveBalance: balance.text,
-      dailyReportsThisWeek: dailyThisWeek.length,
-      team: take(ctx.users, 80).map((person) => ({
-        name: person.name,
-        role: person.role,
-        department: person.department,
-        site: person.site_name,
-      })),
-      tasks: taskBrief(ctx.tasks, ctx.users),
-      leaves: leaveBrief(ctx.leaves),
-      tickets: take(ctx.tickets, 40).map((ticket) => ({
-        title: ticket.task_title,
-        raisedBy: ticket.raised_by_name || ticket.raised_by,
-        assignedTo: ticket.assigned_to_name || ticket.assigned_to,
-        site: ticket.site_name,
-        status: ticket.status,
-      })),
-      dailyReports: take(ctx.dprs, 40).map((row) => ({
-        date: row.date,
-        site: row.site,
-        type: row.report_type,
-        engineer: row.engineer,
-      })),
-      weeklyReports: take(ctx.wprs, 30).map((row) => ({
-        date: row.report_date,
-        site: row.site_name,
-        number: row.report_number,
-        engineer: row.engineer_name,
-      })),
-      siteVisits: take(ctx.visits, 30).map((row) => ({
-        date: row.visit_date,
-        site: row.site_name,
-        by: row.reporter_name,
-      })),
-      arrivedMaterial: take(ctx.materials, 60).map((row) => ({
-        date: row.created_at,
-        site: row.site_name,
-        category: row.category_name,
-        subcategory: row.subcategory_name,
-        type: row.type_name,
-        quantity: row.quantity,
-        unit: row.unit,
-        by: row.recorded_by,
-      })),
-    };
+  return current.includes(wanted.replace(/\s+/g, "_"));
+}
+
+function materialTotals(list) {
+  const groups = new Map();
+  list.forEach((row) => {
+    const label = [row.category_name, row.subcategory_name, row.type_name].filter(Boolean).join(" · ") || "Material";
+    const unit = row.unit || "units";
+    const key = `${label}|${unit}`;
+    groups.set(key, (groups.get(key) || 0) + (Number(row.quantity) || 0));
+  });
+  return [...groups.entries()].map(([key, quantity]) => {
+    const splitAt = key.lastIndexOf("|");
+    return { label: key.slice(0, splitAt), unit: key.slice(splitAt + 1), quantity };
+  });
+}
+
+function finishLookup(mode, list, display) {
+  const shown = display.slice(0, 20);
+  const forModel = { count: list.length };
+  if (mode === "sum") {
+    const totals = materialTotals(list).filter((item) => item.quantity);
+    if (totals.length) forModel.totals = totals;
   }
-  if (scope === "office") {
-    const ctx = await loadContext();
-    const username = user?.user_name || user?.username || "";
-    const { data } = await supabase
-      .from("attendance")
-      .select("user_name, name, date, clock_in, clock_out, clock_in_status")
-      .eq("user_name", username)
-      .gte("date", addDays(today, -30))
-      .lte("date", today)
-      .order("date", { ascending: false })
-      .limit(31);
-    const me = ctx.users.find((person) => matchesMe(person.username, user) || matchesMe(person.name, user)) || user || {};
-    const mine = ctx.allTasks.filter((task) => matchesMe(task.assigned_to, user));
-    return {
-      today,
-      note: "pendingTasks and inProgressTasks are newest first. If the user asks for the last N, return only those N rows.",
-      profile: {
-        name: me.name,
-        username: me.username || me.user_name,
-        role: me.role,
-        department: me.department,
-        sites: userSiteNames(me).length ? userSiteNames(me) : userSiteNames(user),
-      },
-      pendingTasks: taskBrief(mine.filter((task) => norm(task.status) === "pending"), ctx.users),
-      inProgressTasks: taskBrief(mine.filter((task) => norm(task.status) === "in_progress"), ctx.users),
-      leaves: leaveBrief(ctx.leaves.filter((leave) => matchesMe(leave.user_name, user) || matchesMe(leave.name, user))),
-      tickets: take(ctx.tickets.filter((ticket) =>
-        matchesMe(ticket.raised_by, user) ||
-        matchesMe(ticket.raised_by_name, user) ||
-        matchesMe(ticket.assigned_to, user) ||
-        matchesMe(ticket.assigned_to_name, user),
-      ), 30).map((ticket) => ({
-        title: ticket.task_title,
-        status: ticket.status,
-        site: ticket.site_name,
-        when: ticket.created_at,
-      })),
-      attendance: take(data, 20).map((row) => ({
-        date: row.date,
-        status: attendanceStatus(row),
-        in: fmtClock(row.clock_in),
-        out: fmtClock(row.clock_out),
-      })),
-      myLeaveBalance: (await ownLeaveBalanceAnswer(user, [])).text,
-    };
+  if (mode === "list") {
+    forModel.showing = shown.length;
+    forModel.rows = shown;
+  } else {
+    forModel.note = "Use this count or these totals. Do not invent extra rows.";
   }
-  const ctx = await loadContext();
-  const openTasks = ctx.allTasks.filter((task) => ["pending", "in_progress"].includes(norm(task.status)));
-  const overdue = filterTasks(ctx.allTasks, { overdueToday: true });
   return {
-    today,
-    employees: take(ctx.users, 200).map((person) => ({
-      name: person.name,
-      username: person.username,
-      role: person.role,
-      department: person.department,
-      site: person.site_name,
-      status: person.status,
-    })),
-    sites: take(ctx.sites, 80).map((site) => ({
-      name: site.site_name,
-      head: site.user_name,
-      client: site.client_name,
-      status: site.status,
-    })),
-    openTasks: taskBrief(openTasks, ctx.users),
-    overdueTasks: taskBrief(overdue, ctx.users),
-    leaves: leaveBrief(ctx.leaves),
-    openTickets: take(ctx.tickets.filter((ticket) => norm(ticket.status) === "open"), 40).map((ticket) => ({
-      title: ticket.task_title,
-      raisedBy: ticket.raised_by_name || ticket.raised_by,
-      assignedTo: ticket.assigned_to_name || ticket.assigned_to,
-      site: ticket.site_name,
-      status: ticket.status,
-    })),
+    mode,
+    forModel,
+    columns: shown[0] ? Object.keys(shown[0]) : [],
+    rows: mode === "list" ? shown : null,
   };
 }
 
-function readGroqAnswer(raw, scope) {
+async function runLookup(scope, user, rawArgs) {
+  const args = lookupArgs(rawArgs);
+  const dataset = norm(args.dataset).replace(/\s+/g, "_");
+  const mode = ["count", "sum", "list", "balance"].includes(norm(args.mode)) ? norm(args.mode) : "count";
+  const allowed = LOOKUP_DATASETS[scope] || LOOKUP_DATASETS.admin;
+  if (!allowed.includes(dataset)) {
+    return { mode, forModel: { error: `Not available here. Use one of: ${allowed.join(", ")}.` } };
+  }
+  if (dataset === "profile" || mode === "balance") {
+    const balance = await ownLeaveBalanceAnswer(user, []);
+    return {
+      mode: "balance",
+      forModel: {
+        name: user?.name || user?.user_name || "",
+        role: user?.role || "",
+        department: user?.department || "",
+        sites: userSiteNames(user),
+        leaveBalance: balance.text,
+      },
+    };
+  }
+
+  const siteScope = scope === "site" ? await loadSiteContext(user) : null;
+  if (siteScope?.empty) return { mode, forModel: { error: "No site is assigned to this user." } };
+  if (siteScope && args.site && !siteScope.mine.some((site) => hasText(site, args.site))) {
+    return { mode, forModel: { error: `Only these sites are visible: ${siteScope.mine.join(", ")}.` } };
+  }
+
+  let list = [];
+  let display = [];
+
+  if (dataset === "material" && siteScope) {
+    list = siteScope.materials.filter((row) =>
+      hasText(row.site_name, args.site) &&
+      hasText(row.category_name, args.category) &&
+      hasText(row.subcategory_name, args.subcategory) &&
+      hasText(row.type_name, args.type) &&
+      personOk([row.recorded_by], args.person) &&
+      withinDates(row.created_at, args.from, args.to));
+    display = list.map((row) => ({
+      Date: prettyDateTime(row.created_at),
+      Site: row.site_name || "—",
+      Material: [row.subcategory_name, row.type_name].filter(Boolean).join(" · ") || row.category_name || "—",
+      Qty: `${row.quantity ?? ""} ${row.unit || ""}`.trim(),
+      By: row.recorded_by || "—",
+    }));
+  } else if (dataset === "daily_reports" && siteScope) {
+    list = siteScope.dprs.filter((row) =>
+      hasText(row.site, args.site) &&
+      hasText(row.report_type, args.type) &&
+      personOk([row.engineer], args.person) &&
+      withinDates(row.date, args.from, args.to));
+    display = list.map((row) => ({
+      Date: prettyDate(row.date),
+      Site: row.site || "—",
+      Type: titleCase(row.report_type),
+      Engineer: row.engineer || "—",
+    }));
+  } else if (dataset === "weekly_reports" && siteScope) {
+    list = siteScope.wprs.filter((row) =>
+      hasText(row.site_name, args.site) &&
+      personOk([row.engineer_name], args.person) &&
+      withinDates(row.report_date || row.created_at, args.from, args.to));
+    display = list.map((row) => ({
+      Date: row.report_date || prettyDate(row.created_at),
+      Site: row.site_name || "—",
+      No: row.report_number ?? "—",
+      Engineer: row.engineer_name || "—",
+    }));
+  } else if (dataset === "site_visits" && siteScope) {
+    list = siteScope.visits.filter((row) =>
+      hasText(row.site_name, args.site) &&
+      personOk([row.reporter_name], args.person) &&
+      withinDates(row.visit_date, args.from, args.to));
+    display = list.map((row) => ({
+      Date: prettyDate(row.visit_date),
+      Site: row.site_name || "—",
+      By: row.reporter_name || "—",
+    }));
+  } else if (dataset === "team" && siteScope) {
+    list = siteScope.users.filter((person) =>
+      (!args.site || personOnSites(person, [args.site])) &&
+      personOk([person.name, person.username, person.role], args.person));
+    display = list.map((person) => ({
+      Name: person.name || person.username,
+      Role: person.role || "—",
+      Department: person.department || "—",
+      Site: person.site_name || "—",
+    }));
+  } else if (dataset === "tasks") {
+    const ctx = siteScope || await loadContext();
+    const source = siteScope ? ctx.tasks : ctx.allTasks;
+    list = source.filter((task) => {
+      if (scope === "office" && !matchesMe(task.assigned_to, user)) return false;
+      return hasText(task.site_name, args.site) &&
+        taskStatusOk(task, args.status) &&
+        personOk([task.assigned_to, displayName(ctx.users ? ctx : { users: ctx.users || [] }, task.assigned_to)], args.person) &&
+        withinDates(task.created_at, args.from, args.to);
+    });
+    const users = ctx.users || [];
+    display = list.map((task) => ({
+      Title: task.title || "Untitled",
+      Assigned: displayName({ users }, task.assigned_to),
+      Due: prettyDate(task.due_date),
+      Status: titleCase(task.status),
+      Site: task.site_name || "—",
+    }));
+  } else if (dataset === "leaves") {
+    const ctx = siteScope || (scope === "hr" ? await loadHrContext() : await loadContext());
+    list = (ctx.leaves || []).filter((leave) => {
+      if (scope === "office" && !(matchesMe(leave.user_name, user) || matchesMe(leave.name, user))) return false;
+      const status = computeLeaveStatus(leave);
+      const wanted = norm(args.status);
+      const statusOk = !wanted || status.includes(wanted) || (wanted === "today" && status === "approved" && coversDate(leave, ymd()));
+      return statusOk &&
+        hasText(leave.site_name, args.site) &&
+        hasText(leave.leave_type, args.type) &&
+        personOk([leave.name, leave.user_name], args.person) &&
+        (!args.from && !args.to || overlapsRange(leave, args.from || "0000-01-01", args.to || "9999-12-31"));
+    });
+    display = list.map((leave) => ({
+      Name: leave.name || leave.user_name || "—",
+      Type: leave.leave_type || "Leave",
+      From: prettyDate(leave.from_date),
+      To: prettyDate(leave.to_date),
+      Status: titleCase(computeLeaveStatus(leave)),
+      Site: leave.site_name || "—",
+    }));
+  } else if (dataset === "tickets") {
+    const ctx = siteScope || await loadContext();
+    list = (ctx.tickets || []).filter((ticket) => {
+      if (scope === "office" && !(
+        matchesMe(ticket.raised_by, user) ||
+        matchesMe(ticket.raised_by_name, user) ||
+        matchesMe(ticket.assigned_to, user) ||
+        matchesMe(ticket.assigned_to_name, user)
+      )) return false;
+      return hasText(ticket.site_name, args.site) &&
+        hasText(ticket.status, args.status) &&
+        personOk([ticket.raised_by, ticket.raised_by_name, ticket.assigned_to, ticket.assigned_to_name], args.person);
+    });
+    display = list.map((ticket) => ({
+      Task: ticket.task_title || "—",
+      Status: titleCase(ticket.status),
+      Site: ticket.site_name || "—",
+      By: ticket.raised_by_name || ticket.raised_by || "—",
+    }));
+  } else if (dataset === "employees" || dataset === "sites") {
+    const ctx = scope === "hr" ? await loadHrContext() : await loadContext();
+    if (dataset === "sites") {
+      list = (ctx.sites || []).filter((site) =>
+        hasText(site.site_name, args.site) &&
+        hasText(site.status, args.status) &&
+        personOk([site.user_name, site.client_name], args.person));
+      display = list.map((site) => ({
+        Site: site.site_name || "—",
+        Head: site.user_name || "—",
+        Client: site.client_name || "—",
+        Status: site.status || "—",
+      }));
+    } else {
+      list = (ctx.users || []).filter((person) =>
+        hasText(person.department, args.category) &&
+        hasText(person.role, args.type) &&
+        hasText(person.site_name, args.site) &&
+        hasText(person.status, args.status) &&
+        personOk([person.name, person.username], args.person));
+      display = list.map((person) => ({
+        Name: person.name || person.username,
+        Role: person.role || "—",
+        Department: person.department || "—",
+        Site: person.site_name || "—",
+      }));
+    }
+  } else if (dataset === "attendance") {
+    const hr = scope === "office" ? null : await loadHrContext();
+    let source = hr?.attendance || [];
+    if (scope === "office") {
+      const username = user?.user_name || user?.username || "";
+      const { data } = await supabase
+        .from("attendance")
+        .select("user_name, name, date, clock_in, clock_out, clock_in_status")
+        .eq("user_name", username)
+        .gte("date", args.from || addDays(ymd(), -30))
+        .lte("date", args.to || ymd())
+        .order("date", { ascending: false })
+        .limit(40);
+      source = data || [];
+    }
+    list = source.filter((row) =>
+      personOk([row.name, row.user_name], args.person) &&
+      withinDates(row.date, args.from, args.to) &&
+      (!args.status || norm(attendanceStatus(row)).includes(norm(args.status))));
+    display = list.slice(0, 40).map((row) => ({
+      Name: row.name || row.user_name || "—",
+      Date: prettyDate(row.date),
+      Status: attendanceStatus(row),
+      In: fmtClock(row.clock_in),
+      Out: fmtClock(row.clock_out),
+    }));
+    list = display.length && source.length ? list : list;
+  } else if (dataset === "expenses" || dataset === "documents") {
+    const hr = await loadHrContext();
+    const source = dataset === "expenses" ? hr.expenses : hr.documents;
+    list = (source || []).filter((row) =>
+      hasText(row.category || row.doc_type || row.document_type, args.category) &&
+      hasText(row.status, args.status) &&
+      personOk([row.employee_name, row.user_name, row.name], args.person));
+    display = list.map((row) => ({
+      Employee: row.employee_name || row.user_name || row.name || "—",
+      Type: row.category || row.doc_type || row.document_type || "—",
+      Amount: row.amount != null ? String(row.amount) : "—",
+      Status: row.status || "—",
+    }));
+  }
+
+  return finishLookup(mode, list, display);
+}
+
+function readGroqAnswer(raw, scope, question) {
   const cleaned = String(raw || "").replace(/```json|```/g, "").trim();
   let parsed;
   try {
@@ -1612,63 +1746,115 @@ function readGroqAnswer(raw, scope) {
     : null;
   const text = String(parsed.text || parsed.answer || "").trim();
   if (!text && !rows?.length) return null;
+  const summary = asksForSummary(norm(question));
   return {
     text: text || "Here is what the records show.",
-    columns: rows?.length ? columns : null,
-    rows: rows?.length ? rows : null,
+    columns: summary || !rows?.length ? null : columns,
+    rows: summary || !rows?.length ? null : rows,
     chips: chipsFor(scope),
   };
 }
 
-async function answerWithGroq(question, user, scope) {
-  const data = await briefFor(scope, user);
+async function groqChat(messages, tools) {
   const response = await fetch("/api/groq", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: GROQ_MODEL,
       temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        {
-          role: "system",
-          content: "You are DIP Bot for a construction company portal. The user may write in English, Hindi, or Gujarati, including Roman script. Examples: 'mara last 3 pending tasks kaya che' means 'what are my last 3 pending tasks'; 'athvadiana' means this week; 'baki rahieli leave' or 'leaves left' means the viewer's own remaining balance in myLeaveBalance, not who is on leave. Reply in the same language, in simple words. Use ONLY the JSON records. Do not invent people, dates, counts, or sites. If they ask how many, answer with that count from the records. If they ask for a number of items, such as last 3, return only that many rows. Lists named pendingTasks are already newest first, so the last 3 pending tasks are the first 3 in that list. Do not return the full list when a smaller number was asked. Reply as JSON with keys text (string), columns (array of strings or null), and rows (array of objects using those column names, or null). Keep text to one or two sentences. For a leave balance question, put the balance in text and set columns and rows to null.",
-        },
-        {
-          role: "user",
-          content: JSON.stringify({
-            question,
-            scope,
-            viewer: user?.name || user?.user_name || user?.username || "",
-            records: data,
-          }),
-        },
-      ],
+      messages,
+      ...(tools ? { tools, tool_choice: "auto" } : {}),
     }),
   });
   if (!response.ok) return null;
   const body = await response.json();
-  return readGroqAnswer(body?.choices?.[0]?.message?.content, scope);
+  return body?.choices?.[0]?.message || null;
 }
 
-export async function answerDipQuery(rawText, user, options = {}) {
+async function answerWithGroq(question, user, scope, history) {
+  const today = ymd();
+  const weekFrom = startOfWeek(today);
+  const weekTo = addDays(weekFrom, 6);
+  const allowed = (LOOKUP_DATASETS[scope] || LOOKUP_DATASETS.admin).join(", ");
+  const prior = (history || [])
+    .slice(-6)
+    .filter((turn) => turn?.content)
+    .map((turn) => ({ role: turn.role === "assistant" ? "assistant" : "user", content: String(turn.content) }));
+  const messages = [
+    {
+      role: "system",
+      content: `You are DIP Bot. Answer like ChatGPT, in the user's language (English, Hindi, or Roman Gujarati). Today is ${today}. This week is ${weekFrom} to ${weekTo}. athvadia means this week. For any fact, number, list, or total, call lookup before you answer. Allowed datasets: ${allowed}. Use mode count for how many receipts or records, mode sum for quantities, mode list only when the user asks to see or show records, mode balance for remaining leave. Pass dates as YYYY-MM-DD. After lookup, reply in one or two sentences using only that result. Do not invent numbers. Do not paste a table in the text.`,
+    },
+    ...prior,
+    { role: "user", content: question },
+  ];
+  const lookupTool = {
+    type: "function",
+    function: {
+      name: "lookup",
+      description: "Read the signed-in user's portal records. Call this for every factual question.",
+      parameters: {
+        type: "object",
+        properties: {
+          dataset: { type: "string", enum: LOOKUP_DATASETS[scope] || LOOKUP_DATASETS.admin },
+          mode: { type: "string", enum: ["count", "sum", "list", "balance"] },
+          category: { type: "string", description: "Material category such as civil, or a department." },
+          subcategory: { type: "string" },
+          type: { type: "string", description: "Material type, report type, or role." },
+          site: { type: "string" },
+          status: { type: "string", description: "pending, open, overdue, approved, present, late, absent." },
+          person: { type: "string" },
+          from: { type: "string" },
+          to: { type: "string" },
+        },
+        required: ["dataset", "mode"],
+      },
+    },
+  };
+
+  let lookup = null;
+  for (let step = 0; step < 3; step += 1) {
+    const message = await groqChat(messages, [lookupTool]);
+    if (!message) return null;
+    const calls = message.tool_calls || [];
+    if (!calls.length) {
+      const text = String(message.content || "").trim();
+      if (!text) return null;
+      const qn = norm(question);
+      const smallTalk = /^(hi|hello|hey|thanks|thank you|ok|okay)\b/.test(qn) || /\b(help|what can you)\b/.test(qn);
+      if (!lookup && !smallTalk) return null;
+      const parsed = text.startsWith("{") ? readGroqAnswer(text, scope, question) : null;
+      const showSheet = lookup?.mode === "list" && !asksForSummary(norm(question)) && lookup.rows?.length;
+      return {
+        text: parsed?.text || text,
+        columns: showSheet ? lookup.columns : null,
+        rows: showSheet ? lookup.rows : null,
+        chips: chipsFor(scope),
+      };
+    }
+    messages.push(message);
+    for (const call of calls) {
+      if (call.function?.name === "lookup") lookup = await runLookup(scope, user, call.function.arguments);
+      messages.push({
+        role: "tool",
+        tool_call_id: call.id,
+        content: JSON.stringify(lookup?.forModel || { error: "Lookup failed." }),
+      });
+    }
+  }
+  return null;
+}
+
+async function resolveDipQuery(rawText, user, options = {}) {
   const scope = norm(options.scope) || "admin";
   const text = String(rawText || "").trim();
   const q = norm(text);
   if (q && asksOwnLeaveBalance(q) && (scope === "site" || scope === "office")) {
     return ownLeaveBalanceAnswer(user, chipsFor(scope));
   }
-  if (
-    q &&
-    scope === "site" &&
-    /\b(dpr|daily report|daily reports)\b/.test(q) &&
-    (asksThisWeek(q) || asksToday(q))
-  ) {
-    return answerSiteDipQuery(rawText, user);
-  }
   if (text) {
     try {
-      const groqAnswer = await answerWithGroq(text, user, scope);
+      const groqAnswer = await answerWithGroq(text, user, scope, options.history);
       if (groqAnswer?.text) return groqAnswer;
     } catch {
       /* fall back to the keyword answers */
@@ -1952,4 +2138,10 @@ export async function answerDipQuery(rawText, user, options = {}) {
     text: "I didn’t catch a specific report in that. Try asking about leave, tasks, delegated work, tickets, employees, or sites.",
     chips: DIP_CHIPS,
   };
+}
+
+export async function answerDipQuery(rawText, user, options = {}) {
+  const answer = await resolveDipQuery(rawText, user, options);
+  if (!answer || !asksForSummary(norm(rawText))) return answer;
+  return replyText(answer);
 }

@@ -1033,6 +1033,7 @@ const SERIES_CFG = [
   { key: "graphical", label: "Graphical", color: "#d97706" },
 ];
 
+
 function MonthDrilldown({ monthKey, items, onClose }) {
   const label = monthLabelOf(monthKey);
   const byType = SERIES_CFG.map((cfg) => ({

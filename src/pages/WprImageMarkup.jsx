@@ -72,14 +72,158 @@ function drawMark(ctx, mark, selected) {
     ctx.font = `700 ${box.size}px "Segoe UI", sans-serif`;
     ctx.fillStyle = mark.color;
     ctx.fillText(mark.text, box.x + box.padX, box.y + box.padY + box.size * 0.82);
-    if (selected) {
-      ctx.setLineDash([8, 6]);
-      ctx.strokeStyle = "#111827";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(box.x - 4, box.y - 4, box.w + 8, box.h + 8);
-    }
+  }
+  if (selected) {
+    const box = markBounds(ctx, mark);
+    const radius = handleRadius(ctx.canvas);
+    ctx.setLineDash([8, 6]);
+    ctx.strokeStyle = "#111827";
+    ctx.lineWidth = Math.max(2, radius * 0.18);
+    ctx.strokeRect(box.x - 6, box.y - 6, box.w + 12, box.h + 12);
+    ctx.setLineDash([]);
+    Object.values(handlePoints(box)).forEach((point) => {
+      ctx.beginPath();
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#c96a10";
+      ctx.lineWidth = Math.max(2, radius * 0.2);
+      ctx.arc(point.x, point.y, radius, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    });
   }
   ctx.restore();
+}
+
+function handleRadius(canvas) {
+  const rect = canvas.getBoundingClientRect();
+  const scale = rect.width / canvas.width || 1;
+  return Math.max(8, 12 / scale);
+}
+
+function handlePoints(box) {
+  const right = box.x + box.w;
+  const bottom = box.y + box.h;
+  const midX = box.x + box.w / 2;
+  const midY = box.y + box.h / 2;
+  return {
+    n: { x: midX, y: box.y },
+    e: { x: right, y: midY },
+    s: { x: midX, y: bottom },
+    w: { x: box.x, y: midY },
+    ne: { x: right, y: box.y },
+    nw: { x: box.x, y: box.y },
+    se: { x: right, y: bottom },
+    sw: { x: box.x, y: bottom },
+  };
+}
+
+function hitHandle(ctx, mark, point) {
+  const box = markBounds(ctx, mark);
+  const radius = handleRadius(ctx.canvas) * 1.7;
+  let found = "";
+  let best = radius;
+  Object.entries(handlePoints(box)).forEach(([key, handle]) => {
+    const distance = Math.hypot(point.x - handle.x, point.y - handle.y);
+    if (distance <= best) {
+      found = key;
+      best = distance;
+    }
+  });
+  return found;
+}
+
+function resizeByHandle(mark, handle, point, snapshot) {
+  const box = snapshot.box;
+  const minSize = 12;
+  const right = box.x + box.w;
+  const bottom = box.y + box.h;
+  let x = box.x;
+  let y = box.y;
+  let w = box.w;
+  let h = box.h;
+  if (handle.includes("e")) w = Math.max(minSize, point.x - box.x);
+  if (handle.includes("w")) {
+    x = Math.min(point.x, right - minSize);
+    w = right - x;
+  }
+  if (handle.includes("s")) h = Math.max(minSize, point.y - box.y);
+  if (handle.includes("n")) {
+    y = Math.min(point.y, bottom - minSize);
+    h = bottom - y;
+  }
+  if (mark.type === "line" && snapshot.points) {
+    const sx = box.w > 1 ? w / box.w : 1;
+    const sy = box.h > 1 ? h / box.h : 1;
+    return {
+      ...mark,
+      points: snapshot.points.map((item) => ({
+        x: x + (item.x - box.x) * sx,
+        y: y + (item.y - box.y) * sy,
+      })),
+    };
+  }
+  if (mark.type === "text") {
+    const factor = handle === "n" || handle === "s"
+      ? h / Math.max(1, box.h)
+      : handle === "e" || handle === "w"
+        ? w / Math.max(1, box.w)
+        : (w / Math.max(1, box.w) + h / Math.max(1, box.h)) / 2;
+    return { ...mark, x, y, size: Math.min(160, Math.max(14, Math.round((snapshot.size || 24) * factor))) };
+  }
+  return { ...mark, x, y, w, h };
+}
+
+function markBounds(ctx, mark) {
+  if (mark.type === "text") return textBoxOf(ctx, mark);
+  if (mark.type === "line" && mark.points?.length) {
+    const xs = mark.points.map((point) => point.x);
+    const ys = mark.points.map((point) => point.y);
+    const x = Math.min(...xs);
+    const y = Math.min(...ys);
+    return { x, y, w: Math.max(8, Math.max(...xs) - x), h: Math.max(8, Math.max(...ys) - y) };
+  }
+  return { x: mark.x, y: mark.y, w: Math.abs(mark.w || 0), h: Math.abs(mark.h || 0) };
+}
+
+function pointInMark(ctx, mark, point) {
+  const box = markBounds(ctx, mark);
+  const pad = Math.max(14, (mark.width || 4) * 2);
+  if (mark.type === "line" && mark.points?.length > 1) {
+    return mark.points.slice(1).some((end, index) => {
+      const start = mark.points[index];
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const len2 = dx * dx + dy * dy || 1;
+      const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / len2));
+      return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy)) <= pad;
+    });
+  }
+  return point.x >= box.x - pad && point.x <= box.x + box.w + pad && point.y >= box.y - pad && point.y <= box.y + box.h + pad;
+}
+
+function scaleShape(mark, factor) {
+  if (mark.type === "line" && mark.points?.length) {
+    const cx = mark.points.reduce((sum, point) => sum + point.x, 0) / mark.points.length;
+    const cy = mark.points.reduce((sum, point) => sum + point.y, 0) / mark.points.length;
+    return {
+      ...mark,
+      width: Math.min(40, Math.max(2, (mark.width || 4) * factor)),
+      points: mark.points.map((point) => ({
+        x: cx + (point.x - cx) * factor,
+        y: cy + (point.y - cy) * factor,
+      })),
+    };
+  }
+  const w = Math.max(10, (mark.w || 0) * factor);
+  const h = Math.max(10, (mark.h || 0) * factor);
+  return {
+    ...mark,
+    x: mark.x + (mark.w || 0) / 2 - w / 2,
+    y: mark.y + (mark.h || 0) / 2 - h / 2,
+    w,
+    h,
+    width: Math.min(40, Math.max(2, (mark.width || 4) * factor)),
+  };
 }
 
 function boxFrom(start, end) {
@@ -299,6 +443,24 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     return next;
   };
 
+  const clampMarkInside = (mark) => {
+    const canvas = canvasRef.current;
+    if (!canvas || mark?.type === "text") return mark;
+    const ctx = canvas.getContext("2d");
+    const box = markBounds(ctx, mark);
+    let dx = 0;
+    let dy = 0;
+    if (box.x < 0) dx = -box.x;
+    else if (box.x + box.w > canvas.width) dx = canvas.width - box.x - box.w;
+    if (box.y < 0) dy = -box.y;
+    else if (box.y + box.h > canvas.height) dy = canvas.height - box.y - box.h;
+    if (!dx && !dy) return mark;
+    if (mark.type === "line") {
+      return { ...mark, points: (mark.points || []).map((point) => ({ x: point.x + dx, y: point.y + dy })) };
+    }
+    return { ...mark, x: mark.x + dx, y: mark.y + dy };
+  };
+
   const pointFrom = (event) => {
     const canvas = canvasRef.current;
     const rect = canvas.getBoundingClientRect();
@@ -308,15 +470,12 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     };
   };
 
-  const hitText = (point) => {
+  const hitMark = (point) => {
     const canvas = canvasRef.current;
     if (!canvas) return -1;
     const ctx = canvas.getContext("2d");
     for (let index = marksRef.current.length - 1; index >= 0; index -= 1) {
-      const mark = marksRef.current[index];
-      if (mark.type !== "text") continue;
-      const box = textBoxOf(ctx, mark);
-      if (point.x >= box.x && point.x <= box.x + box.w && point.y >= box.y && point.y <= box.y + box.h) return index;
+      if (pointInMark(ctx, marksRef.current[index], point)) return index;
     }
     return -1;
   };
@@ -332,10 +491,34 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     }
     if (!ready || textBox) return;
     const point = pointFrom(event);
-    const hit = hitText(point);
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext("2d");
+    let hit = selectedText != null && marksRef.current[selectedText] && hitHandle(ctx, marksRef.current[selectedText], point)
+      ? selectedText
+      : hitMark(point);
+    const handle = hit >= 0 ? hitHandle(ctx, marksRef.current[hit], point) : "";
     if (hit >= 0) {
       const mark = marksRef.current[hit];
-      dragRef.current = { index: hit, dx: point.x - mark.x, dy: point.y - mark.y };
+      const box = markBounds(ctx, mark);
+      dragRef.current = handle
+        ? {
+            mode: "resize",
+            index: hit,
+            handle,
+            snapshot: {
+              box,
+              points: (mark.points || []).map((item) => ({ ...item })),
+              size: mark.size,
+            },
+          }
+        : {
+            mode: "move",
+            index: hit,
+            origin: point,
+            snapshot: mark.type === "line"
+              ? { points: (mark.points || []).map((item) => ({ ...item })) }
+              : { x: mark.x, y: mark.y },
+          };
       setSelectedText(hit);
       event.currentTarget.setPointerCapture(event.pointerId);
       return;
@@ -377,10 +560,23 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     if (pinchRef.current || pointersRef.current.size >= 2) return;
     if (dragRef.current) {
       const point = pointFrom(event);
-      const { index, dx, dy } = dragRef.current;
+      const { index, origin, snapshot, mode, handle } = dragRef.current;
       setMarks((prev) => prev.map((mark, item) => {
         if (item !== index) return mark;
-        return clampTextInside({ ...mark, x: point.x - dx, y: point.y - dy });
+        if (mode === "resize") {
+          const resized = resizeByHandle(mark, handle, point, snapshot);
+          return resized.type === "text" ? clampTextInside(resized) : resized;
+        }
+        const dx = point.x - origin.x;
+        const dy = point.y - origin.y;
+        if (mark.type === "line") {
+          return clampMarkInside({
+            ...mark,
+            points: snapshot.points.map((itemPoint) => ({ x: itemPoint.x + dx, y: itemPoint.y + dy })),
+          });
+        }
+        const moved = { ...mark, x: snapshot.x + dx, y: snapshot.y + dy };
+        return mark.type === "text" ? clampTextInside(moved) : clampMarkInside(moved);
       }));
       return;
     }
@@ -451,11 +647,15 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
     setTextBox(null);
   };
 
-  const resizeText = (delta) => {
+  const resizeSelected = (factor) => {
     if (selectedText == null) return;
     setMarks((prev) => prev.map((mark, index) => {
-      if (index !== selectedText || mark.type !== "text") return mark;
-      return clampTextInside({ ...mark, size: Math.min(140, Math.max(16, (mark.size || textSize()) + delta)) });
+      if (index !== selectedText) return mark;
+      if (mark.type === "text") {
+        const size = Math.min(160, Math.max(14, Math.round((mark.size || textSize()) * factor)));
+        return clampTextInside({ ...mark, size });
+      }
+      return scaleShape(mark, factor);
     }));
   };
 
@@ -501,7 +701,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
         <header className="wpr-mark-head">
           <div>
             <strong>Mark work sections</strong>
-            <p>Pinch or drag with two fingers to zoom. On a computer, use the mouse wheel. Marks stay with the image.</p>
+            <p>Drag a mark to move it. Drag a round handle on its side or corner to resize it. Pinch or use the mouse wheel to zoom.</p>
           </div>
           <button type="button" className="wpr-mark-x" onClick={onCancel} aria-label="Close">×</button>
         </header>
@@ -531,9 +731,9 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
           <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(Math.round((zoom - 0.25) * 100) / 100)}>Zoom out</button>
           <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(1)}>{Math.round(zoom * 100)}%</button>
           <button type="button" className="wpr-mark-tool" onClick={() => changeZoom(Math.round((zoom + 0.25) * 100) / 100)}>Zoom in</button>
-          <button type="button" className="wpr-mark-tool" onClick={() => resizeText(-4)} disabled={selectedText == null}>Smaller</button>
-          <button type="button" className="wpr-mark-tool" onClick={() => resizeText(4)} disabled={selectedText == null}>Larger</button>
-          <button type="button" className="wpr-mark-tool" onClick={editSelectedText} disabled={selectedText == null}>Edit text</button>
+          <button type="button" className="wpr-mark-tool" onClick={() => resizeSelected(0.85)} disabled={selectedText == null}>Smaller</button>
+          <button type="button" className="wpr-mark-tool" onClick={() => resizeSelected(1.18)} disabled={selectedText == null}>Larger</button>
+          <button type="button" className="wpr-mark-tool" onClick={editSelectedText} disabled={selectedText == null || marks[selectedText]?.type !== "text"}>Edit text</button>
           <button type="button" className="wpr-mark-tool" onClick={() => { setMarks((prev) => prev.slice(0, -1)); setSelectedText(null); }} disabled={!marks.length}>Undo</button>
           <button type="button" className="wpr-mark-tool" onClick={() => { setMarks([]); setDraft(null); }} disabled={!marks.length}>Clear</button>
         </div>
@@ -546,10 +746,14 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onDoubleClick={(event) => {
-              const index = hitText(pointFrom(event));
+              const index = hitMark(pointFrom(event));
               if (index < 0) return;
-              setSelectedText(index);
               const mark = marksRef.current[index];
+              if (!mark || mark.type !== "text") {
+                setSelectedText(index);
+                return;
+              }
+              setSelectedText(index);
               const rect = canvasRef.current.getBoundingClientRect();
               const canvas = canvasRef.current;
               setTextBox({

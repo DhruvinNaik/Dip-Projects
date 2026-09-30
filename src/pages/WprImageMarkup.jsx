@@ -241,7 +241,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   const imgRef = useRef(null);
   const startRef = useRef(null);
   const draftRef = useRef(null);
-  const toolRef = useRef("rect");
+  const toolRef = useRef("pan");
   const colorRef = useRef(COLORS[0]);
   const marksRef = useRef([]);
   const pointersRef = useRef(new Map());
@@ -249,7 +249,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
   const suppressDrawRef = useRef(false);
   const zoomRef = useRef(1);
   const [ready, setReady] = useState(false);
-  const [tool, setTool] = useState("rect");
+  const [tool, setTool] = useState("pan");
   const [color, setColor] = useState(COLORS[0]);
   const [marks, setMarks] = useState([]);
   const [draft, setDraft] = useState(null);
@@ -490,6 +490,18 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
       return;
     }
     if (!ready || textBox) return;
+    if (toolRef.current === "pan") {
+      const stage = stageRef.current;
+      dragRef.current = {
+        mode: "pan",
+        x: event.clientX,
+        y: event.clientY,
+        scrollLeft: stage?.scrollLeft || 0,
+        scrollTop: stage?.scrollTop || 0,
+      };
+      event.currentTarget.setPointerCapture(event.pointerId);
+      return;
+    }
     const point = pointFrom(event);
     const canvas = canvasRef.current;
     const ctx = canvas.getContext("2d");
@@ -561,6 +573,14 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
       pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     }
     if (pinchRef.current || pointersRef.current.size >= 2) return;
+    if (dragRef.current?.mode === "pan") {
+      const stage = stageRef.current;
+      if (stage) {
+        stage.scrollLeft = dragRef.current.scrollLeft - (event.clientX - dragRef.current.x);
+        stage.scrollTop = dragRef.current.scrollTop - (event.clientY - dragRef.current.y);
+      }
+      return;
+    }
     if (dragRef.current) {
       const point = pointFrom(event);
       const { index, origin, snapshot, mode, handle } = dragRef.current;
@@ -704,7 +724,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
         <header className="wpr-mark-head">
           <div>
             <strong>Mark work sections</strong>
-            <p>Drag a mark to move it. Drag a round handle on its side or corner to resize it. Pinch or use the mouse wheel to zoom.</p>
+            <p>The arrow only zooms and scrolls. Choose Square, Circle, Draw, or Text when you want to mark the image.</p>
           </div>
           <button type="button" className="wpr-mark-x" onClick={onCancel} aria-label="Close">×</button>
         </header>
@@ -719,6 +739,16 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
               {item.label}
             </button>
           ))}
+          <button
+            type="button"
+            className={`wpr-mark-tool wpr-mark-arrow${tool === "pan" ? " is-on" : ""}`}
+            aria-label="Zoom and scroll"
+            onClick={() => { setTool("pan"); setTextBox(null); setSelectedText(null); setDraft(null); }}
+          >
+            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
+              <path d="M5 3.2l13.2 7.4-5.5.9-1.8 5.6-1.5-4.6L5 3.2z" fill="currentColor" />
+            </svg>
+          </button>
           <span className="wpr-mark-colors">
             {COLORS.map((item) => (
               <button
@@ -749,6 +779,7 @@ export default function WprImageMarkup({ imageUrl, onCancel, onSave }) {
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
             onDoubleClick={(event) => {
+              if (toolRef.current === "pan") return;
               const index = hitMark(pointFrom(event));
               if (index < 0) return;
               const mark = marksRef.current[index];

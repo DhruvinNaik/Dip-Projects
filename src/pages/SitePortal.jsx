@@ -18,6 +18,7 @@ import "./SitePortal.css";
 import { computeMonthlyLeaveBalance, isMonthlyLeaveRole } from "./leaveUtils.js";
 import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
 import ArrivedMaterial from "./ArrivedMaterial.jsx";
+import MonthEndReport from "./MonthEndReport.jsx";
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://efqfjfthsleymhljswcq.supabase.co";
@@ -466,6 +467,7 @@ const NAV = [
       { key: "daily-report", label: "Daily Report", icon: Ico.report },
       { key: "wpr-generator", label: "Weekly Report", icon: Ico.weekly },
       { key: "weekly-plan", label: "Weekly Plan", icon: Ico.weeklyPlan },
+      {key: "monthly-report", label: "Monthly Report", icon: Ico.monthly},
       { key: "site-report", label: "Site Visit Report", icon: Ico.site },
       //{ key: "material-requirement", label: "Material Requirement", icon: Ico.materialRequirement,},
       { key: "my-reports", label: "My Reports", icon: Ico.myRpt },
@@ -1534,25 +1536,6 @@ function WeeklyReport() {
   );
 }
  //
-// ═══════════════════════════════════════════════════════════════════════════════
-// MONTHLY REPORT
-// ═══════════════════════════════════════════════════════════════════════════════
-function MonthlyReport() {
-  return (
-    <div className="empty-state" style={{ padding: "80px 24px" }}>
-      <div className="empty-ico" style={{ width: 64, height: 64 }}>
-        {Ico.monthly}
-      </div>
-      <div className="empty-title" style={{ fontSize: 16 }}>
-        Monthly Report
-      </div>
-      <div className="empty-sub">
-        This feature is coming soon. Monthly consolidated reports will appear
-        here.
-      </div>
-    </div>
-  );
-}
 export const ROLE_LEVELS = [
   "Site Engineer",
   "Site Incharge",
@@ -1644,6 +1627,7 @@ const NAV_COLORS = {
   "my-reports": "#16a34a",
   "material-arrived": "#16a34a",
   "weekly-plan": "#db2777",
+  "monthly-report": "#db2777",
   "manpower-reports": "#16a34a",
   "report-submissions": "#0891b2",
   "profile": "#bd3c0a",
@@ -2059,6 +2043,8 @@ useEffect(() => {
         return <ArrivedMaterial user={user} />;
       case "weekly-plan":
         return <WeeklyPlanReport user={user} />;
+      case "monthly-report":
+        return <MonthEndReport user={user} supabase={supabase} />;
       case "manpower-reports":
         return <ManpowerReport user={user} />;
       case "profile":

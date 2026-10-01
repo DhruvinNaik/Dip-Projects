@@ -111,6 +111,7 @@ export async function generateMonthEndDocx({
   site, monthLabel, jobNo, summary,
   photos, activityLog, nextWeekPlan, drawingRegister,
   officeActivity, visitorRegister, drawingDecisionPending, delayPoints, photoCounts,
+  materials = [],
   siteTitleImageUrl,
   logoUrl = "/dip-logo.png",
 }) {
@@ -443,6 +444,28 @@ export async function generateMonthEndDocx({
     }
     pushSection(bodyChildren, "8. Progress Photographs", photoNodes);
   }
+
+  const materialNodes = [];
+  if (summary?.material_summary) {
+    materialNodes.push(new Paragraph({ text: summary.material_summary, spacing: { after: 180 } }));
+  }
+  if (materials.length) {
+    materialNodes.push(reportTable(
+      ["Date", "Category / Subcategory", "Type", "Quantity", "Recorded By", "Bill"],
+      materials.map((item) => [
+        item.date,
+        [item.category, item.subcategory].filter(Boolean).join(" / "),
+        item.type,
+        [item.quantity, item.unit].filter((value) => value !== null && value !== undefined && value !== "").join(" "),
+        item.recordedBy,
+        item.billAttached ? "Attached" : "—",
+      ]),
+      "Material receipts recorded during the month",
+    ));
+  } else {
+    materialNodes.push(new Paragraph({ text: "No material receipts were recorded for this month." }));
+  }
+  pushSection(bodyChildren, "9. Materials Received", materialNodes);
 
   // ── SECTION 3: THANK YOU ──
   const thankYouChildren = [];

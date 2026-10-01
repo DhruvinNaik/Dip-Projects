@@ -36,6 +36,13 @@ const VISITOR_TYPES = [
 
 const zp = (n) => String(parseInt(n) || 1).padStart(2, "0");
 const today = () => new Date().toISOString().split("T")[0];
+const hasReportValue = (value) => {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.some(hasReportValue);
+  if (value && typeof value === "object") return Object.values(value).some(hasReportValue);
+  return value !== null && value !== undefined && value !== false;
+};
+const nonEmptyRows = (rows = []) => rows.filter(hasReportValue);
 
 // Converts a "yyyy-mm-dd" date input value to "dd-mm-yyyy" for filenames
 const fmtDateForFile = (dateStr) => {
@@ -2574,18 +2581,18 @@ const displayReportNo = zp(reportNum);
       report_date: reportDate,
       report_number: reportNum,
       location,
-      activities: activities.map((a) => ({
+      activities: nonEmptyRows(activities).map((a) => ({
         name: a.name || "",
         status: a.status || "",
         progressImages: a.progressImages || [],
       })),
-      next_week_plans: plans,
+      next_week_plans: nonEmptyRows(plans),
       drawing_register_headers: drawingHeaders,
-      drawing_register_data: drawingData,
-      office_activity_items: officeItems,
-      visitor_register_data: visitors,
-      drawing_decision_data: drawDecision,
-      delay_points: delayPoints,
+      drawing_register_data: nonEmptyRows(drawingData),
+      office_activity_items: nonEmptyRows(officeItems),
+      visitor_register_data: nonEmptyRows(visitors),
+      drawing_decision_data: nonEmptyRows(drawDecision),
+      delay_points: nonEmptyRows(delayPoints),
       visitor_photos: visitorPhotos,
       visitor_mode: visitorMode,
       report_sections: sections.map((s) => ({
@@ -2594,7 +2601,7 @@ const displayReportNo = zp(reportNum);
         hidden: s.hidden,
         slideHidden: s.slideHidden,
         type: s.type,
-        textItems: s.textItems || [],
+        textItems: nonEmptyRows(s.textItems || []),
       })),
       barchart_header: barchartHeader,
       cube_header: cubeHeader,
@@ -2750,24 +2757,24 @@ const displayReportNo = zp(reportNum);
           report_number: resolvedReportNum,
           location,
           status: "submitted",
-          activities: activities.map((a) => ({
+          activities: nonEmptyRows(activities).map((a) => ({
             name: a.name,
             status: a.status,
           })),
-          next_week_plans: plans.filter(Boolean),
+          next_week_plans: nonEmptyRows(plans),
           drawing_register_headers: drawingHeaders,
-          drawing_register_data: drawingData,
-          office_activity_items: officeItems.filter(Boolean),
-          visitor_register_data: visitors,
-          drawing_decision_data: drawDecision,
-          delay_points: delayPoints.filter(Boolean),
+          drawing_register_data: nonEmptyRows(drawingData),
+          office_activity_items: nonEmptyRows(officeItems),
+          visitor_register_data: nonEmptyRows(visitors),
+          drawing_decision_data: nonEmptyRows(drawDecision),
+          delay_points: nonEmptyRows(delayPoints),
           report_sections: sections.map((s) => ({
             title: s.title,
             isStandard: s.isStandard,
             hidden: s.hidden,
             slideHidden: s.slideHidden,
             type: s.type,
-            textItems: s.textItems || [],
+            textItems: nonEmptyRows(s.textItems || []),
           })),
           submitted_by: user?.user_name || engineer,
         })
@@ -3031,7 +3038,7 @@ const displayReportNo = zp(reportNum);
             hidden: s.hidden,
             slideHidden: s.slideHidden,
             type: s.type,
-            textItems: s.textItems || [],
+            textItems: nonEmptyRows(s.textItems || []),
           })),
           submitted_by: user?.user_name || engineer,
         })

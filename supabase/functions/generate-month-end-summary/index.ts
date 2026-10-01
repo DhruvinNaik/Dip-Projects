@@ -264,6 +264,7 @@ const corsHeaders = {
 const SCHEMA = `{
   "executive_summary": string,
   "activity_highlights": string[],
+  "material_summary": string,
   "visitor_summary": string,
   "delay_commentary": string
 }`;
@@ -281,23 +282,30 @@ serve(async (req) => {
       );
     }
 
-    const { site, month, reports } = body;
-    if (!Array.isArray(reports) || !reports.length) {
-      return new Response(JSON.stringify({ error: "No WPR data provided" }), {
+    const { site, month } = body;
+    const reports = Array.isArray(body?.reports) ? body.reports : [];
+    const materials = Array.isArray(body?.materials) ? body.materials : [];
+    const materialReceiptCount = Number(body?.materialReceiptCount) || 0;
+    if (!reports.length && !materials.length) {
+      return new Response(JSON.stringify({ error: "No WPR or material receipt data provided" }), {
         status: 400,
         headers: corsHeaders,
       });
     }
 
     const systemPrompt =
-      "You are a construction project reporting assistant. You write SHORT narrative commentary that sits alongside a full raw data dump the reader will also see in tables. Do not repeat the raw data verbatim — add color, trend, and context instead (e.g. 'excavation progressed from 40% to 75% over the month' rather than re-listing every activity). Never invent facts. Respond with ONLY valid JSON — no markdown fences, no commentary outside the JSON.";
+      "You are a construction project reporting assistant. Write concise, professional commentary based only on the supplied weekly progress reports and material receipt totals. The reader will see the raw records in tables, so explain trends and context without repeating the tables. Never invent facts, infer quality or consumption, or claim a delivery was used. Respond with ONLY valid JSON — no markdown fences or commentary outside the JSON.";
 
     const userPrompt = `Site: ${site}
 Month: ${month}
 
-Raw weekly report data for the full month (JSON array, oldest first). The reader will see all of this in full elsewhere — your job is only to summarize trends and add narrative color:
+Raw weekly report data for the full month (JSON array, oldest first):
 
 ${JSON.stringify(reports)}
+
+Material receipt totals for the same month, grouped by category, subcategory, type, and unit:
+${JSON.stringify(materials)}
+Total material receipt records: ${materialReceiptCount}
 
 Produce JSON matching this schema:
 ${SCHEMA}
@@ -305,9 +313,11 @@ ${SCHEMA}
 Rules:
 - executive_summary: 3-5 sentence overview of how the month went (progress trend, notable events).
 - activity_highlights: up to 6 short bullets (under 20 words each) on the most significant activity progressions across the month — not a full list, just what stands out.
+- material_summary: 1-3 sentences describing recorded receipts and notable category or quantity patterns. Distinguish receipts from usage; use the provided units and totals.
 - visitor_summary: 1-3 sentences on notable visits/patterns this month (or empty string if no visitors).
 - delay_commentary: 1-3 sentences on delay/red-flag trends this month (or empty string if none).
 - Only reference what is actually present in the data.
+- If weekly reports or material receipts are absent, summarize only the data that is present.
 - Output raw JSON only.`;
 
     const resp = await fetch("https://api.groq.com/openai/v1/chat/completions", {
@@ -323,7 +333,7 @@ Rules:
           { role: "user", content: userPrompt },
         ],
         temperature: 0.3,
-        max_tokens: 1200,
+        max_tokens: 1600,
         response_format: { type: "json_object" },
       }),
     });
@@ -354,6 +364,7 @@ Rules:
     const normalized = {
       executive_summary: summary.executive_summary || "",
       activity_highlights: Array.isArray(summary.activity_highlights) ? summary.activity_highlights : [],
+      material_summary: summary.material_summary || "",
       visitor_summary: summary.visitor_summary || "",
       delay_commentary: summary.delay_commentary || "",
     };

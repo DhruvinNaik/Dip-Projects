@@ -148,19 +148,33 @@ export default function MonthEndReport({ user, supabase }) {
     setError("");
     setResult(null);
     setProgress(5);
-    setStep("Fetching this month's weekly reports…");
+    setStep("Fetching this month's weekly reports and material receipts…");
   
     try {
-      const { data: allWprs, error: wprErr } = await supabase
-        .from("wpr_reports").select("*").ilike("site_name", site).order("created_at", { ascending: true });
+      const [selectedYear, selectedMonth] = month.split("-").map(Number);
+      const monthStart = new Date(selectedYear, selectedMonth - 1, 1).toISOString();
+      const nextMonthStart = new Date(selectedYear, selectedMonth, 1).toISOString();
+      const [wprResult, materialResult] = await Promise.all([
+        supabase.from("wpr_reports").select("*").ilike("site_name", site).order("created_at", { ascending: true }),
+        supabase.from("site_material_arrivals")
+          .select("created_at, category_name, subcategory_name, type_name, quantity, unit, recorded_by, user_name, bill_url")
+          .ilike("site_name", site)
+          .gte("created_at", monthStart)
+          .lt("created_at", nextMonthStart)
+          .order("created_at", { ascending: true }),
+      ]);
+      const { data: allWprs, error: wprErr } = wprResult;
       if (wprErr) throw wprErr;
+      const { data: materialRows, error: materialErr } = materialResult;
+      if (materialErr) throw materialErr;
 
       const wprs = (allWprs || [])
         .filter((r) => monthKeyOf(r.report_date || r.created_at) === month)
         .sort((a, b) => new Date(a.report_date || a.created_at || 0) - new Date(b.report_date || b.created_at || 0));
+      const materialReceipts = materialRows || [];
 
-      if (!wprs.length) {
-        setError("No weekly reports found for this site and month.");
+      if (!wprs.length && !materialReceipts.length) {
+        setError("No weekly reports or material receipts found for this site and month.");
         setGenerating(false);
         return;
       }
@@ -221,10 +235,10 @@ export default function MonthEndReport({ user, supabase }) {
       const drawingDecisionPending = [...drawingDecisionMap.values()];
 
       const lastWpr = wprs[wprs.length - 1];
-      const nextWeekPlan = {
+      const nextWeekPlan = lastWpr ? {
         source: `${reportLabel(lastWpr)} — ${dateOf(lastWpr)}`,
         plans: asArray(lastWpr.next_week_plans),
-      };
+      } : { source: "", plans: [] };
 
       setProgress(15);
       setStep("Looking up site cover image…");
@@ -235,23 +249,27 @@ export default function MonthEndReport({ user, supabase }) {
       setStep(`Found ${wprs.length} weekly report(s) — fetching photos…`);
 
       const wprIds = wprs.map((w) => w.id);
-        const { data: imgRows } = await supabase
+      let imgRows = [];
+      if (wprIds.length) {
+        const { data } = await supabase
           .from("wpr_images")
           .select("wpr_report_id, image_type, public_url, caption, created_at")
           .in("wpr_report_id", wprIds);
+        imgRows = data || [];
+      }
 
-        const allPhotos = (imgRows || [])
-          .filter((row) => row.image_type !== "site_image")
-          .flatMap((row) => {
-            const urls = Array.isArray(row.public_url) ? row.public_url : [row.public_url].filter(Boolean);
-            const captions = Array.isArray(row.caption) ? row.caption : [row.caption].filter(Boolean);
-            return urls.map((url, i) => ({
-              url,
-              caption: captions[i] || "",
-              date: row.created_at,
-              type: PHOTO_TYPE_LABELS[row.image_type] || row.image_type,
-        }));
-      });
+      const allPhotos = imgRows
+        .filter((row) => row.image_type !== "site_image")
+        .flatMap((row) => {
+          const urls = Array.isArray(row.public_url) ? row.public_url : [row.public_url].filter(Boolean);
+          const captions = Array.isArray(row.caption) ? row.caption : [row.caption].filter(Boolean);
+          return urls.map((url, i) => ({
+            url,
+            caption: captions[i] || "",
+            date: row.created_at,
+            type: PHOTO_TYPE_LABELS[row.image_type] || row.image_type,
+          }));
+        });
       const photoCounts = {};
       allPhotos.forEach((p) => { photoCounts[p.type] = (photoCounts[p.type] || 0) + 1; });
 
@@ -305,15 +323,44 @@ export default function MonthEndReport({ user, supabase }) {
         report_number: r.report_number || "",
         date: r.report_date || r.created_at || "",
         engineer: r.engineer_name || "",
+        location: r.location || "",
         activities: asArray(r.activities),
+        next_week_plans: asArray(r.next_week_plans),
+        drawing_register_headers: asArray(r.drawing_register_headers),
+        drawing_register_data: asArray(r.drawing_register_data),
         office_activity_items: asArray(r.office_activity_items),
         visitor_register_data: asArray(r.visitor_register_data),
+        drawing_decision_data: asArray(r.drawing_decision_data),
         delay_points: asArray(r.delay_points),
+        report_sections: asArray(r.report_sections).map((section) => ({
+          title: section.title || "",
+          text_items: asArray(section.textItems),
+        })),
       }));
+      const materialTotalsMap = new Map();
+      materialReceipts.forEach((row) => {
+        const key = [row.category_name, row.subcategory_name, row.type_name, row.unit].join("|");
+        const item = materialTotalsMap.get(key) || {
+          category: row.category_name,
+          subcategory: row.subcategory_name,
+          type: row.type_name,
+          unit: row.unit,
+          quantity: 0,
+        };
+        item.quantity += Number(row.quantity) || 0;
+        materialTotalsMap.set(key, item);
+      });
+      const materialTotals = [...materialTotalsMap.values()];
 
       const { data: aiData, error: aiErr } = await supabase.functions.invoke(
         "generate-month-end-summary",
-        { body: { site, month: monthLabelOf(month), reports: reportsPayload } },
+        { body: {
+          site,
+          month: monthLabelOf(month),
+          reports: reportsPayload,
+          materials: materialTotals,
+          materialReceiptCount: materialReceipts.length,
+        } },
       );
       if (aiErr) {
         let detail = aiErr.message;
@@ -345,6 +392,16 @@ export default function MonthEndReport({ user, supabase }) {
         drawingDecisionPending,
         delayPoints: dedupedDelays,
         photoCounts,
+        materials: materialReceipts.map((row) => ({
+          date: fmtDate(row.created_at),
+          category: row.category_name || "",
+          subcategory: row.subcategory_name || "",
+          type: row.type_name || "",
+          quantity: row.quantity,
+          unit: row.unit || "",
+          recordedBy: row.recorded_by || row.user_name || "",
+          billAttached: Boolean(row.bill_url),
+        })),
         siteTitleImageUrl,
       });
 
@@ -393,7 +450,7 @@ export default function MonthEndReport({ user, supabase }) {
 
       setProgress(100);
       setStep("Done!");
-      setResult({ url, blob, filename, wprCount: wprs.length, photoCount: finalPhotos.length });
+      setResult({ url, blob, filename, wprCount: wprs.length, materialCount: materialReceipts.length, photoCount: finalPhotos.length });
       checkExisting();
     } catch (err) {
       setError(err.message || "Generation failed");
@@ -476,7 +533,7 @@ export default function MonthEndReport({ user, supabase }) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
             <path d="M20 6L9 17l-5-5" />
           </svg>
-          Report generated — {result.wprCount} WPRs merged, {result.photoCount} AI-selected photos included.
+          Report generated — {result.wprCount} WPRs, {result.materialCount} material receipts, and {result.photoCount} AI-selected photos included.
         </div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
             {result.blob && (

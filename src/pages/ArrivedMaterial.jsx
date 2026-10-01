@@ -69,9 +69,9 @@ const CATEGORY_COLORS = [
 function categoryStyle(name, selected, index = 0) {
   const color = CATEGORY_COLORS[Math.abs(index) % CATEGORY_COLORS.length];
   return {
-    background: color.bg,
+    background: selected ? color.ink : color.bg,
     borderColor: selected ? color.ink : color.border,
-    color: color.ink,
+    color: selected ? "#fff" : color.ink,
     boxShadow: selected ? `inset 0 0 0 1px ${color.ink}` : "none",
   };
 }

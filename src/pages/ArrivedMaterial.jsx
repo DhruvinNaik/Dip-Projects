@@ -326,9 +326,16 @@ export default function ArrivedMaterial({ user }) {
     const node = catsRef.current;
     if (!node) return undefined;
     const onWheel = (event) => {
-      if (node.scrollWidth <= node.clientWidth) return;
+      const maxScroll = node.scrollWidth - node.clientWidth;
+      if (maxScroll <= 0) return;
+      let delta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (event.deltaMode === 1) delta *= 16;
+      if (event.deltaMode === 2) delta *= node.clientWidth;
+      if (!delta) return;
+      const nextScroll = Math.max(0, Math.min(maxScroll, node.scrollLeft + delta));
+      if (nextScroll === node.scrollLeft) return;
       event.preventDefault();
-      node.scrollLeft += event.deltaY + event.deltaX;
+      node.scrollLeft = nextScroll;
     };
     node.addEventListener("wheel", onWheel, { passive: false });
     return () => node.removeEventListener("wheel", onWheel);

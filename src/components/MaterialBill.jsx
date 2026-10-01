@@ -19,14 +19,92 @@ export async function uploadMaterialBill(file, siteName) {
 
 export function billExcelValue(url) {
   if (!url) return "";
-  return { text: url, hyperlink: url };
+  return { text: "📄 Open bill", hyperlink: url };
 }
 
 export function paintBillLinks(row, columnNumber) {
   const cell = row.getCell(columnNumber);
   if (cell.value && typeof cell.value === "object" && cell.value.hyperlink) {
-    cell.font = { color: { argb: "FF1D4ED8" }, underline: true };
+    cell.font = { color: { argb: "FF047857" }, underline: true, bold: true };
   }
+}
+
+function sheetName(label, used) {
+  const clean = String(label || "Other")
+    .replace(/[:\\/?*[\]]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 31) || "Other";
+  let name = clean;
+  let n = 2;
+  while (used.has(name.toLowerCase())) {
+    const suffix = ` (${n})`;
+    name = `${clean.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`;
+    n += 1;
+  }
+  used.add(name.toLowerCase());
+  return name;
+}
+
+function arrivalExcelRow(row) {
+  return [
+    row.created_at ? new Date(row.created_at).toLocaleString("en-IN") : "",
+    row.site_name || "",
+    row.category_name || "",
+    row.subcategory_name || "",
+    row.type_name || "",
+    row.quantity ?? "",
+    row.unit || "",
+    billExcelValue(row.bill_url),
+    row.recorded_by || "",
+  ];
+}
+
+function fillSheet(book, title, rows) {
+  const sheet = book.addWorksheet(title);
+  sheet.columns = [
+    { width: 22 }, { width: 22 }, { width: 16 }, { width: 16 },
+    { width: 14 }, { width: 12 }, { width: 12 }, { width: 16 }, { width: 20 },
+  ];
+  const header = sheet.addRow(["Date", "Site", "Category", "Subcategory", "Type", "Quantity", "Unit", "Bill photo", "Recorded by"]);
+  header.height = 22;
+  header.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
+    cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
+    cell.alignment = { vertical: "middle" };
+  });
+  rows.forEach((values, index) => {
+    const added = sheet.addRow(values);
+    if (index % 2 === 1) {
+      added.eachCell((cell) => {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
+      });
+    }
+    paintBillLinks(added, 8);
+  });
+  sheet.views = [{ state: "frozen", ySplit: 1 }];
+}
+
+export function fillArrivedMaterialBook(book, records) {
+  const groups = new Map();
+  (records || []).forEach((row) => {
+    const key = String(row.subcategory_name || "Other").trim() || "Other";
+    const label = key;
+    const existing = [...groups.keys()].find((name) => name.toLowerCase() === label.toLowerCase());
+    const name = existing || label;
+    if (!groups.has(name)) groups.set(name, []);
+    groups.get(name).push(row);
+  });
+  if (groups.size <= 1) {
+    fillSheet(book, "Arrived material", (records || []).map(arrivalExcelRow));
+    return;
+  }
+  const used = new Set();
+  [...groups.keys()]
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+    .forEach((name) => {
+      fillSheet(book, sheetName(name, used), groups.get(name).map(arrivalExcelRow));
+    });
 }
 
 function fileNameFromUrl(url) {

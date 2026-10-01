@@ -72,7 +72,9 @@
   overflow-x: auto;
   padding: 2px 2px 8px;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
 }
+.am-cats::-webkit-scrollbar { display: none; }
 .am-honey { display: none; }
 .am-label {
   margin: 14px 0 8px;

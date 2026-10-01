@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { supabase } from "../supabase";
 import { answerDipQuery, DIP_CHIPS, DIP_HR_CHIPS, DIP_SITE_CHIPS, DIP_OFFICE_CHIPS } from "../lib/dipBot";
-import { BillActions, billExcelValue, paintBillLinks, uploadMaterialBill } from "./MaterialBill";
+import { BillActions, fillArrivedMaterialBook, uploadMaterialBill } from "./MaterialBill";
 import logoUrl from "../assets/logo.png";
 import "./PortalFloaters.css";
 
@@ -2221,43 +2221,8 @@ function MaterialPanel({ user, onClose }) {
   }, [records, search, filterCategory, filterSubcategory, filterType, catalog]);
 
   const downloadExcel = async () => {
-    const headers = ["Date", "Site", "Category", "Subcategory", "Type", "Quantity", "Unit", "Bill photo", "Recorded by"];
-    const rows = filteredRecords.length
-      ? filteredRecords.map((row) => [
-          row.created_at ? new Date(row.created_at).toLocaleString("en-IN") : "",
-          row.site_name || "",
-          row.category_name || "",
-          row.subcategory_name || "",
-          row.type_name || "",
-          row.quantity ?? "",
-          row.unit || "",
-          billExcelValue(row.bill_url),
-          row.recorded_by || "",
-        ])
-      : [headers.map(() => "")];
     const book = new ExcelJS.Workbook();
-    const sheet = book.addWorksheet("Arrived material");
-    sheet.columns = [
-      { width: 22 }, { width: 22 }, { width: 16 }, { width: 16 },
-      { width: 14 }, { width: 12 }, { width: 12 }, { width: 42 }, { width: 20 },
-    ];
-    const header = sheet.addRow(headers);
-    header.height = 22;
-    header.eachCell((cell) => {
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF047857" } };
-      cell.font = { bold: true, color: { argb: "FFFFFFFF" }, size: 11 };
-      cell.alignment = { vertical: "middle" };
-    });
-    rows.forEach((values, index) => {
-      const added = sheet.addRow(values);
-      if (index % 2 === 1) {
-        added.eachCell((cell) => {
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
-        });
-      }
-      paintBillLinks(added, 8);
-    });
-    sheet.views = [{ state: "frozen", ySplit: 1 }];
+    fillArrivedMaterialBook(book, filteredRecords);
     const buffer = await book.xlsx.writeBuffer();
     const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     const link = document.createElement("a");

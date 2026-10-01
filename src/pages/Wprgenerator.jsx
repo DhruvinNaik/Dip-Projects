@@ -3429,7 +3429,7 @@ const displayReportNo = zp(reportNum);
                   letterSpacing: ".06em",
                 }}
               >
-                Report Number (site-wise):
+                Report Number:
                   <span
                   style={{
                   fontSize: 18,

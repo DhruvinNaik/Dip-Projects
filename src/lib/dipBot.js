@@ -62,6 +62,147 @@ function startOfWeek(iso) {
   return ymd(d);
 }
 
+const SITE_INTENTS = [
+  "SITE_LIST",
+  "SITE_COUNT",
+  "SITE_STATUS",
+  "PENDING_WORK",
+  "TODAY_PENDING_WORK",
+  "WEEKLY_REPORTS",
+  "WEEKLY_REPORT_COUNT",
+  "LATEST_REPORT",
+  "REPORT_HISTORY",
+  "TODAY_MANPOWER",
+  "SITE_PROGRESS",
+  "COMPLETED_WORK",
+  "DELAYED_ACTIVITIES",
+  "TASK_COUNT",
+  "PENDING_TASK_COUNT",
+  "MATERIALS",
+  "ARRIVED_MATERIAL",
+  "EQUIPMENT",
+  "VISITORS",
+  "CUBE_TESTS",
+  "LEAVE",
+  "TICKETS",
+  "SITE_DASHBOARD",
+];
+
+function normalizeSiteQuestion(text) {
+  return String(text || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[?!.]+/g, " ")
+    .replace(/\s+/g, " ");
+}
+
+function hasTerm(q, term) {
+  if (term.includes(" ")) return q.includes(term);
+  return q.split(" ").some((token) => token === term || (term.length >= 3 && token.startsWith(term)));
+}
+
+function hasAnyTerm(q, terms) {
+  return terms.some((term) => hasTerm(q, term));
+}
+
+function wantsCount(q) {
+  return hasAnyTerm(q, ["how many", "how much", "ketla", "ketli", "ketlu", "number of", "count"]);
+}
+
+function wantsList(q) {
+  return hasAnyTerm(q, ["show", "list", "batavo", "bataavo", "give me", "tell me"]);
+}
+
+function mentionsToday(q) {
+  return hasAnyTerm(q, ["today", "aaje", "aje", "aaj"]);
+}
+
+function mentionsYesterday(q) {
+  return hasAnyTerm(q, ["yesterday", "gai kale", "kale", "kal"]);
+}
+
+function mentionsThisWeek(q) {
+  return q.includes("this week") || q.includes("athvad");
+}
+
+function extractDateRange(text) {
+  const q = normalizeSiteQuestion(text);
+  const today = ymd();
+  if (q.includes("last 7") || q.includes("7 divas") || q.includes("past 7")) {
+    return { from: addDays(today, -6), to: today, label: "the last 7 days" };
+  }
+  if (q.includes("this month") || q.includes("aa month")) {
+    return { from: `${today.slice(0, 7)}-01`, to: today, label: "this month" };
+  }
+  if (q.includes("last week")) {
+    const thisFrom = startOfWeek(today);
+    const from = addDays(thisFrom, -7);
+    return { from, to: addDays(from, 6), label: "last week" };
+  }
+  if (mentionsThisWeek(q)) {
+    const from = startOfWeek(today);
+    return { from, to: addDays(from, 6), label: "this week" };
+  }
+  if (mentionsYesterday(q) && !mentionsToday(q)) {
+    const day = addDays(today, -1);
+    return { from: day, to: day, label: "yesterday" };
+  }
+  if (mentionsToday(q)) {
+    return { from: today, to: today, label: "today" };
+  }
+  return null;
+}
+
+function extractRequestedOutput(text) {
+  const q = normalizeSiteQuestion(text);
+  if (hasAnyTerm(q, ["latest", "newest"])) return "latest";
+  if (wantsCount(q)) return "count";
+  if (hasTerm(q, "status")) return "status";
+  if (wantsList(q)) return "list";
+  return "detail";
+}
+
+function classifySiteIntent(text) {
+  const q = normalizeSiteQuestion(text);
+  if (!q) return null;
+  const count = wantsCount(q);
+  const list = wantsList(q);
+  const today = mentionsToday(q);
+  const aboutReports = hasAnyTerm(q, ["report", "dpr", "wpr"]);
+  const aboutDaily = hasAnyTerm(q, ["dpr", "daily"]);
+  const aboutWeeklyDoc = (hasTerm(q, "wpr") || q.includes("weekly report")) && !aboutDaily;
+  const history = q.includes("last 7") || q.includes("7 divas") || q.includes("this month") || q.includes("aa month") || q.includes("old report");
+  const aboutSites = hasAnyTerm(q, ["site", "project"]);
+  const pending = hasTerm(q, "pending");
+
+  if (hasAnyTerm(q, ["worker", "manpower", "labour", "labor", "majur", "majuri", "kamdar", "female", "male"])) return "TODAY_MANPOWER";
+  if (hasAnyTerm(q, ["equipment", "machine", "machinery"])) return "EQUIPMENT";
+  if (hasTerm(q, "cube")) return "CUBE_TESTS";
+  if (hasTerm(q, "visitor")) return "VISITORS";
+  if (hasAnyTerm(q, ["dashboard", "snapshot", "overview"])) return "SITE_DASHBOARD";
+  if (hasTerm(q, "ticket")) return "TICKETS";
+  if (hasTerm(q, "leave")) return "LEAVE";
+  if (hasAnyTerm(q, ["delay", "delayed", "overdue"])) return "DELAYED_ACTIVITIES";
+  if (hasAnyTerm(q, ["complete", "completed", "thayu"]) && hasAnyTerm(q, ["work", "task", "activity", "yesterday", "kale", "kal"])) return "COMPLETED_WORK";
+  if (hasTerm(q, "progress")) return "SITE_PROGRESS";
+  if (aboutReports && history) return "REPORT_HISTORY";
+  if (aboutReports && hasAnyTerm(q, ["latest", "newest"])) return "LATEST_REPORT";
+  if (aboutReports && (mentionsThisWeek(q) || aboutWeeklyDoc) && count) return "WEEKLY_REPORT_COUNT";
+  if (aboutReports && (mentionsThisWeek(q) || aboutWeeklyDoc || aboutDaily)) return "WEEKLY_REPORTS";
+  if ((hasAnyTerm(q, ["arrived", "arrival"]) || (hasAnyTerm(q, ["cement", "sand", "steel", "material"]) && hasAnyTerm(q, ["arrived", "avi", "aavi"]))) && !hasAnyTerm(q, ["use", "used", "upyog"])) return "ARRIVED_MATERIAL";
+  if (hasAnyTerm(q, ["material", "cement", "sand", "steel", "tiles", "ply"])) return "MATERIALS";
+  if (pending && today) return "TODAY_PENDING_WORK";
+  if (pending && count && hasTerm(q, "task")) return "PENDING_TASK_COUNT";
+  if (pending) return "PENDING_WORK";
+  if (hasTerm(q, "task") && count) return "TASK_COUNT";
+  if (hasTerm(q, "status")) return "SITE_STATUS";
+  if (aboutSites && (count || hasTerm(q, "active"))) return "SITE_COUNT";
+  if (aboutSites && (list || hasAnyTerm(q, ["which", "assigned", "kai", "my", "mara", "mari", "mare"]))) return "SITE_LIST";
+  return null;
+}
+
+export { classifySiteIntent, extractDateRange, extractRequestedOutput, normalizeSiteQuestion };
+
 function asksThisWeek(q) {
   return /\b(this week|week)\b/.test(q) || /athvad|athvaad/.test(q);
 }
@@ -75,6 +216,141 @@ function asksOwnLeaveBalance(q) {
   const aboutBalance = /\b(left|remaining|balance|available|baki|baaki)\b/.test(q) || /rahi/.test(q);
   const aboutMe = /\b(my|mine|i|me|mari|mara|mane)\b/.test(q);
   return aboutBalance && aboutMe;
+}
+
+function asPayload(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return {};
+  }
+}
+
+function manpowerCount(payload) {
+  const rows = asPayload(payload).manpower;
+  if (!Array.isArray(rows) || !rows.length) return null;
+  return rows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+}
+
+function genderTotal(rows, gender) {
+  return (rows || []).reduce((sum, row) => {
+    if (norm(row.gender) !== gender) return sum;
+    return sum + (Number(row.count) || 0);
+  }, 0);
+}
+
+function daySnapshot(row) {
+  const payload = asPayload(row.payload);
+  const manpower = Array.isArray(payload.manpower) ? payload.manpower : [];
+  return {
+    date: String(row.date || "").slice(0, 10),
+    site: row.site,
+    reportType: row.report_type,
+    progress: clipText(payload.summary, 500),
+    workers: manpowerCount(payload),
+    femaleWorkers: genderTotal(manpower, "female"),
+    maleWorkers: genderTotal(manpower, "male"),
+    manpower: manpower.slice(0, 30).map((item) => ({
+      labour: item.labour,
+      gender: item.gender || "",
+      skill: item.skill || "",
+      category: item.category || "",
+      count: Number(item.count) || 0,
+    })),
+    equipmentUsed: (payload.equipment || []).slice(0, 25).map((item) => ({
+      name: item.name,
+      qty: item.qty,
+      unit: item.unit,
+      source: item.source,
+    })),
+    cement: {
+      available: payload.cementAvailable ?? "",
+      received: payload.cementReceived ?? "",
+      used: payload.cementUsed ?? "",
+      balance: payload.cementBalance ?? "",
+      usedFor: clipText(payload.cementUsedDesc, 180),
+    },
+    materialOnDailyReport: (payload.material || []).slice(0, 20).map((item) => ({
+      name: item.name,
+      qty: item.qty,
+      unit: item.unit,
+    })),
+    materialRequired: (payload.materialRequirement || []).slice(0, 15).map((item) => ({
+      name: item.name,
+      qty: item.qty,
+      unit: item.unit,
+    })),
+    concrete: {
+      theoretical: payload.concreteTheoretical ?? "",
+      onsite: payload.concreteOnsite ?? "",
+      description: clipText(payload.concreteDescription, 180),
+    },
+    planning: clipText(payload.planning, 400),
+    visitors: (Array.isArray(payload.visitors) ? payload.visitors : []).slice(0, 10).map((item) => ({
+      name: item.name,
+      instruction: clipText(item.instruction, 200),
+    })),
+    cubeTests: clipText(payload.cube, 200),
+    extraNotes: (payload.customFields || []).slice(0, 8).map((item) => ({
+      title: item.title,
+      value: clipText(item.value, 160),
+    })),
+  };
+}
+
+function compactDay(row) {
+  const day = daySnapshot(row);
+  return {
+    date: day.date,
+    site: day.site,
+    reportType: day.reportType,
+    progress: clipText(day.progress, 180),
+    planning: clipText(day.planning, 120),
+    workers: day.workers,
+    femaleWorkers: day.femaleWorkers,
+    maleWorkers: day.maleWorkers,
+    equipment: day.equipmentUsed.map((item) => `${item.name} ${item.qty || ""} ${item.unit || ""}`.trim()).join(", "),
+    cementUsed: day.cement.used,
+    cementReceived: day.cement.received,
+    materials: day.materialOnDailyReport.map((item) => `${item.name} ${item.qty || ""} ${item.unit || ""}`.trim()).join(", "),
+  };
+}
+
+function arrivedTotals(rows) {
+  const map = new Map();
+  (rows || []).forEach((row) => {
+    const key = [row.site_name, row.category_name, row.subcategory_name, row.type_name, row.unit].map((value) => norm(value)).join("|");
+    const current = map.get(key) || {
+      site: row.site_name,
+      category: row.category_name,
+      subcategory: row.subcategory_name,
+      type: row.type_name,
+      unit: row.unit,
+      quantity: 0,
+      receipts: 0,
+      lastDate: "",
+    };
+    current.quantity += Number(row.quantity) || 0;
+    current.receipts += 1;
+    const date = String(row.created_at || "").slice(0, 10);
+    if (date > current.lastDate) current.lastDate = date;
+    map.set(key, current);
+  });
+  return [...map.values()];
+}
+
+function oneReportPerSiteDay(rows) {
+  const map = new Map();
+  (rows || []).forEach((row) => {
+    const key = `${norm(row.site)}|${String(row.date || "").slice(0, 10)}`;
+    const current = map.get(key);
+    if (!current || (current.report_type === "morning" && row.report_type !== "morning")) {
+      map.set(key, row);
+    }
+  });
+  return [...map.values()];
 }
 
 function asksForSummary(q) {
@@ -436,7 +712,7 @@ let siteCache = { key: "", at: 0, data: null };
 
 async function loadSiteContext(user) {
   const mine = userSiteNames(user);
-  const key = mine.map(norm).sort().join("|");
+  const key = `v4|${mine.map(norm).sort().join("|")}`;
   if (siteCache.data && siteCache.key === key && Date.now() - siteCache.at < CACHE_TTL_MS) {
     return siteCache.data;
   }
@@ -452,7 +728,7 @@ async function loadSiteContext(user) {
       .order("name", { ascending: true }),
     supabase
       .from("dpr_reports")
-      .select("id, site, engineer, report_type, date, created_at")
+      .select("id, site, engineer, report_type, date, created_at, payload")
       .order("created_at", { ascending: false })
       .limit(600),
     supabase
@@ -462,7 +738,7 @@ async function loadSiteContext(user) {
       .limit(300),
     supabase
       .from("site_reports")
-      .select("id, site_name, reporter_name, visit_date, created_at")
+      .select("id, site_name, reporter_name, designation, visit_date, progress_of_work, quality_observations, safety_concerns, issues_concerns, site_visit_instructions, key_instructions, created_at")
       .order("created_at", { ascending: false })
       .limit(300),
     supabase
@@ -492,6 +768,7 @@ async function loadSiteContext(user) {
     wprs: (wprRes.data || []).filter((row) => onUserSites(row.site_name, mine)),
     visits: (svrRes.data || []).filter((row) => onUserSites(row.site_name, mine)),
     materials: (materialRes.data || []).filter((row) => onUserSites(row.site_name, mine)),
+    sites: (base.sites || []).filter((site) => onUserSites(site.site_name, mine)),
     allSiteNames: (base.sites || []).map((site) => site.site_name).filter(Boolean),
     errors: [usersRes.error, dprRes.error, wprRes.error, svrRes.error, materialRes.error]
       .filter(Boolean)
@@ -514,6 +791,292 @@ function mentionedOwnSite(query, sites) {
     const name = norm(site);
     return name.length > 2 && query.includes(name);
   }) || "";
+}
+
+function siteAnswer(text) {
+  return { text, chips: DIP_SITE_CHIPS };
+}
+
+function reportSubject(text) {
+  const q = normalizeSiteQuestion(text);
+  if ((hasTerm(q, "wpr") || q.includes("weekly report")) && !hasAnyTerm(q, ["dpr", "daily"])) return "weekly";
+  return "daily";
+}
+
+function preferredReport(rows) {
+  return (rows || []).find((row) => row.report_type !== "morning" && manpowerCount(row.payload) != null)
+    || (rows || []).find((row) => row.report_type !== "morning")
+    || (rows || [])[0]
+    || null;
+}
+
+async function classifySiteIntentWithGroq(question) {
+  const message = await groqChat([
+    {
+      role: "system",
+      content: `Classify this site-portal question. Reply with one label only: ${SITE_INTENTS.join(", ")}, or NONE. Do not answer the question and do not invent numbers.`,
+    },
+    { role: "user", content: question },
+  ]);
+  const label = String(message?.content || "").toUpperCase().replace(/[^A-Z_]/g, "");
+  return SITE_INTENTS.includes(label) ? label : null;
+}
+
+function answerFromSiteIntent(intent, text, ctx, focus, inFocus) {
+  const q = normalizeSiteQuestion(text);
+  const range = extractDateRange(text);
+  const output = extractRequestedOutput(text);
+  const today = ymd();
+  const where = focus ? ` at ${focus}` : "";
+  const names = focus ? [focus] : ctx.mine;
+  const tasks = (ctx.tasks || []).filter((task) => inFocus(task.site_name));
+  const dprs = (ctx.dprs || []).filter((row) => inFocus(row.site));
+
+  if (intent === "SITE_LIST") {
+    return siteAnswer(`Your sites: ${ctx.mine.join(", ")}.`);
+  }
+
+  if (intent === "SITE_COUNT") {
+    if (hasTerm(q, "active")) {
+      const records = (ctx.sites || []).filter((site) => onUserSites(site.site_name, names));
+      const known = records.filter((site) => norm(site.status));
+      if (!known.length) {
+        return siteAnswer("No status is saved on your site records, so active projects cannot be counted from assigned sites alone.");
+      }
+      const active = known.filter((site) => norm(site.status) === "active");
+      return siteAnswer(active.length
+        ? `${active.length} active project${active.length === 1 ? "" : "s"}: ${active.map((site) => site.site_name).join(", ")}.`
+        : "0 active projects. None of your assigned sites have status Active.");
+    }
+    return siteAnswer(`You have ${names.length} assigned site${names.length === 1 ? "" : "s"}: ${names.join(", ")}.`);
+  }
+
+  if (intent === "SITE_STATUS") {
+    const records = (ctx.sites || []).filter((site) => onUserSites(site.site_name, names));
+    if (!records.length) return siteAnswer(`No site record with a status was found${where || " for your sites"}.`);
+    return siteAnswer(`${records.map((site) => `${site.site_name}: ${site.status || "no status saved"}`).join(". ")}.`);
+  }
+
+  if (intent === "PENDING_WORK" || intent === "TODAY_PENDING_WORK" || intent === "PENDING_TASK_COUNT" || intent === "TASK_COUNT" || intent === "DELAYED_ACTIVITIES" || intent === "COMPLETED_WORK") {
+    let list = tasks;
+    let heading = "tasks";
+    if (intent === "TODAY_PENDING_WORK") {
+      const day = range?.from || today;
+      list = list.filter((task) => ["pending", "in_progress"].includes(norm(task.status)) && String(task.due_date || "").slice(0, 10) === day);
+      heading = `tasks due ${prettyDate(day)}`;
+    } else if (intent === "DELAYED_ACTIVITIES") {
+      list = list.filter((task) => {
+        const due = String(task.due_date || "").slice(0, 10);
+        return due && due < today && !["completed", "not_applicable"].includes(norm(task.status));
+      });
+      heading = "delayed tasks";
+    } else if (intent === "COMPLETED_WORK") {
+      const day = range?.from || "";
+      list = list.filter((task) => norm(task.status) === "completed" && (!day || String(task.due_date || "").slice(0, 10) === day));
+      heading = day ? `completed tasks due ${prettyDate(day)}` : "completed tasks";
+    } else if (intent === "TASK_COUNT") {
+      heading = "tasks";
+    } else {
+      list = list.filter((task) => ["pending", "in_progress"].includes(norm(task.status)));
+      heading = "pending tasks";
+    }
+    if (output === "count" || intent === "TASK_COUNT" || intent === "PENDING_TASK_COUNT") {
+      return siteAnswer(`${list.length} ${heading}${where}.`);
+    }
+    if (intent === "PENDING_WORK" && (q.includes("which site") || q.includes("kai site"))) {
+      const bySite = tally(list, (task) => task.site_name || "Unknown");
+      if (!bySite.length) return siteAnswer(`No pending work${where}.`);
+      return siteAnswer(`${bySite.map((item) => `${item.name}: ${item.count} pending`).join(". ")}.`);
+    }
+    if (!list.length) return siteAnswer(`No ${heading}${where}.`);
+    const shown = list.slice(0, 12);
+    const lines = shown.map((task) => `${task.title || "Untitled"} (${task.site_name || "—"}, due ${prettyDate(task.due_date)})`);
+    const more = list.length > shown.length ? ` Showing ${shown.length} of ${list.length}.` : "";
+    return siteAnswer(`${list.length} ${heading}${where}. ${lines.join("; ")}.${more}`);
+  }
+
+  if (intent === "WEEKLY_REPORTS" || intent === "WEEKLY_REPORT_COUNT" || intent === "LATEST_REPORT" || intent === "REPORT_HISTORY") {
+    if (reportSubject(text) === "weekly" && intent !== "REPORT_HISTORY") {
+      const list = (ctx.wprs || []).filter((row) => inFocus(row.site_name));
+      if (intent === "WEEKLY_REPORT_COUNT" || output === "count") {
+        return siteAnswer(`${list.length} weekly report${list.length === 1 ? "" : "s"}${where}.`);
+      }
+      const row = list[0];
+      if (intent === "LATEST_REPORT") {
+        return siteAnswer(row
+          ? `Latest weekly report: ${row.site_name}, ${row.report_date || prettyDate(row.created_at)}, no. ${row.report_number ?? "—"}, ${row.engineer_name || "—"}.`
+          : `No weekly report is saved${where}.`);
+      }
+      if (!list.length) return siteAnswer(`No weekly reports${where}.`);
+      const lines = list.slice(0, 12).map((item) => `${item.report_date || prettyDate(item.created_at)} · ${item.site_name} · no. ${item.report_number ?? "—"}`);
+      return siteAnswer(`${list.length} weekly report${list.length === 1 ? "" : "s"}${where}. ${lines.join("; ")}.`);
+    }
+    const window = intent === "LATEST_REPORT"
+      ? null
+      : (range || (intent === "REPORT_HISTORY"
+        ? { from: addDays(today, -29), to: today, label: "the last 30 days" }
+        : { from: startOfWeek(today), to: addDays(startOfWeek(today), 6), label: "this week" }));
+    let list = window ? dprs.filter((row) => {
+      const day = String(row.date || "").slice(0, 10);
+      return day >= window.from && day <= window.to;
+    }) : dprs;
+    const label = window?.label || "on record";
+    if (intent === "WEEKLY_REPORT_COUNT" || output === "count") {
+      return siteAnswer(`${list.length} daily report${list.length === 1 ? "" : "s"} ${label}${where}.`);
+    }
+    if (intent === "LATEST_REPORT") {
+      const row = [...list].sort((a, b) => String(b.date || "").localeCompare(String(a.date || "")) || String(b.created_at || "").localeCompare(String(a.created_at || "")))[0];
+      if (!row) return siteAnswer(`No daily report is saved${where}.`);
+      const progress = clipText(asPayload(row.payload).summary, 180);
+      return siteAnswer(`Latest daily report: ${row.site}, ${prettyDate(row.date)}, ${row.report_type || "report"}, ${row.engineer || "—"}.${progress ? ` ${progress}` : ""}`);
+    }
+    if (!list.length) return siteAnswer(`No daily reports ${label}${where}.`);
+    const shown = list.slice(0, 12);
+    const lines = shown.map((row) => `${prettyDate(row.date)} · ${row.site} · ${row.report_type || "report"}`);
+    const more = list.length > shown.length ? ` Showing ${shown.length} of ${list.length}.` : "";
+    return siteAnswer(`${list.length} daily report${list.length === 1 ? "" : "s"} ${label}${where}. ${lines.join("; ")}.${more}`);
+  }
+
+  if (intent === "TODAY_MANPOWER") {
+    const day = range?.from || today;
+    const rows = dprs.filter((row) => String(row.date || "").slice(0, 10) === day);
+    const female = hasTerm(q, "female");
+    const male = hasTerm(q, "male") && !female;
+    if (!rows.some((row) => manpowerCount(row.payload) != null)) {
+      return siteAnswer(`No worker count is recorded in the DPR for ${prettyDate(day)}${where || ` (${names.join(", ")})`}.`);
+    }
+    const parts = names.map((site) => {
+      const picked = preferredReport(rows.filter((row) => norm(row.site) === norm(site) && manpowerCount(row.payload) != null));
+      if (!picked) return `${site}: no worker count in the DPR`;
+      const people = asPayload(picked.payload).manpower || [];
+      if (female) return `${site}: ${genderTotal(people, "female")} female workers`;
+      if (male) return `${site}: ${genderTotal(people, "male")} male workers`;
+      return `${site}: ${manpowerCount(picked.payload)} workers`;
+    });
+    return siteAnswer(`${prettyDate(day)} — ${parts.join(". ")}.`);
+  }
+
+  if (intent === "SITE_PROGRESS") {
+    const day = range?.from || today;
+    const rows = dprs
+      .filter((row) => String(row.date || "").slice(0, 10) === day && asPayload(row.payload).summary)
+      .sort((a, b) => (a.report_type === "morning" ? 1 : 0) - (b.report_type === "morning" ? 1 : 0));
+    if (!rows.length) return siteAnswer(`No progress note is saved in the DPR for ${prettyDate(day)}${where}.`);
+    return siteAnswer(rows.slice(0, 3).map((row) => `${row.site}: ${String(asPayload(row.payload).summary).trim()}`).join("\n\n"));
+  }
+
+  if (intent === "EQUIPMENT") {
+    const day = range?.from || today;
+    const rows = dprs.filter((row) => String(row.date || "").slice(0, 10) === day);
+    const lines = names.map((site) => {
+      const picked = preferredReport(rows.filter((row) => norm(row.site) === norm(site)));
+      const items = picked ? asPayload(picked.payload).equipment || [] : [];
+      return items.length
+        ? `${site}: ${items.map((item) => `${item.name} ${item.qty || ""} ${item.unit || ""}`.trim()).join(", ")}`
+        : `${site}: no equipment recorded`;
+    });
+    return siteAnswer(`Equipment on ${prettyDate(day)} — ${lines.join(". ")}.`);
+  }
+
+  if (intent === "MATERIALS" || intent === "ARRIVED_MATERIAL") {
+    const needle = ["cement", "sand", "steel", "tiles", "ply", "civil", "electric", "plumbing", "flooring", "furniture"].find((word) => hasTerm(q, word));
+    let arrived = (ctx.materials || []).filter((row) => inFocus(row.site_name));
+    if (needle) {
+      arrived = arrived.filter((row) => norm([row.category_name, row.subcategory_name, row.type_name].join(" ")).includes(needle));
+    }
+    const sums = new Map();
+    arrived.forEach((row) => {
+      const unit = row.unit || "units";
+      sums.set(unit, (sums.get(unit) || 0) + (Number(row.quantity) || 0));
+    });
+    const qty = [...sums.entries()].filter(([, amount]) => amount).map(([unit, amount]) => `${amount} ${unit}`).join(", ");
+    const arrivedLine = arrived.length
+      ? `${needle ? needle : "Material"} arrived${where}: ${qty || `${arrived.length} receipts`}.`
+      : `No ${needle || "matching"} material has arrived${where}.`;
+    const asksUse = hasAnyTerm(q, ["use", "used", "upyog"]);
+    if (intent === "ARRIVED_MATERIAL" || !asksUse) {
+      if (output === "count") return siteAnswer(arrivedLine);
+      const shown = arrived.slice(0, 12).map((row) => `${String(row.created_at || "").slice(0, 10)} ${row.type_name || row.subcategory_name || row.category_name || ""} ${row.quantity ?? ""} ${row.unit || ""}`.trim());
+      return siteAnswer(shown.length ? `${arrivedLine} ${shown.join("; ")}.` : arrivedLine);
+    }
+    const day = range?.from || today;
+    const rows = dprs.filter((row) => String(row.date || "").slice(0, 10) === day);
+    const used = names.map((site) => {
+      const picked = preferredReport(rows.filter((row) => norm(row.site) === norm(site)));
+      const payload = picked ? asPayload(picked.payload) : {};
+      if (!needle || needle === "cement") {
+        const usedQty = payload.cementUsed;
+        return `${site}: cement used ${usedQty === undefined || usedQty === "" ? "not filled in the DPR" : usedQty}`;
+      }
+      const items = payload.material || [];
+      return items.length
+        ? `${site}: ${items.map((item) => `${item.name} ${item.qty} ${item.unit}`).join(", ")}`
+        : `${site}: material use not filled in the DPR`;
+    });
+    return siteAnswer(`${arrivedLine} ${prettyDate(day)} — ${used.join(". ")}.`);
+  }
+
+  if (intent === "VISITORS") {
+    const day = range?.from || today;
+    const rows = dprs.filter((row) => String(row.date || "").slice(0, 10) === day);
+    const lines = [];
+    names.forEach((site) => {
+      const picked = preferredReport(rows.filter((row) => norm(row.site) === norm(site)));
+      const visitors = picked ? asPayload(picked.payload).visitors || [] : [];
+      if (visitors.length) {
+        lines.push(`${site}: ${visitors.map((item) => `${item.name || "Visitor"}${item.instruction ? ` — ${item.instruction}` : ""}`).join("; ")}`);
+      }
+    });
+    if (!lines.length) return siteAnswer(`No visitors are recorded in the DPR for ${prettyDate(day)}${where}.`);
+    return siteAnswer(`${lines.join(". ")}.`);
+  }
+
+  if (intent === "CUBE_TESTS") {
+    const day = range?.from || today;
+    const rows = dprs.filter((row) => String(row.date || "").slice(0, 10) === day);
+    const lines = names.map((site) => {
+      const picked = preferredReport(rows.filter((row) => norm(row.site) === norm(site)));
+      const cube = picked ? String(asPayload(picked.payload).cube || "").trim() : "";
+      return `${site}: ${cube || "no cube test recorded"}`;
+    });
+    return siteAnswer(`Cube tests for ${prettyDate(day)} — ${lines.join(". ")}.`);
+  }
+
+  if (intent === "LEAVE") {
+    let list = (ctx.leaves || []).filter((leave) => !focus || inFocus(leave.site_name));
+    if (mentionsToday(q)) list = list.filter((leave) => computeLeaveStatus(leave) === "approved" && coversDate(leave, today));
+    if (output === "count") return siteAnswer(`${list.length} leave record${list.length === 1 ? "" : "s"}${where}.`);
+    if (!list.length) return siteAnswer(`No leave records matched${where}.`);
+    const lines = list.slice(0, 12).map((leave) => `${leave.name || leave.user_name} ${leave.from_date} to ${leave.to_date} (${computeLeaveStatus(leave)})`);
+    return siteAnswer(`${list.length} leave record${list.length === 1 ? "" : "s"}${where}. ${lines.join("; ")}.`);
+  }
+
+  if (intent === "TICKETS") {
+    let list = (ctx.tickets || []).filter((ticket) => inFocus(ticket.site_name));
+    if (!hasAnyTerm(q, ["solved", "closed", "resolved"])) list = list.filter((ticket) => norm(ticket.status) === "open");
+    if (output === "count") return siteAnswer(`${list.length} ticket${list.length === 1 ? "" : "s"}${where}.`);
+    if (!list.length) return siteAnswer(`No tickets matched${where}.`);
+    const lines = list.slice(0, 12).map((ticket) => `${ticket.task_title || "Ticket"} · ${ticket.site_name || "—"} · ${ticket.status}`);
+    return siteAnswer(`${list.length} ticket${list.length === 1 ? "" : "s"}${where}. ${lines.join("; ")}.`);
+  }
+
+  if (intent === "SITE_DASHBOARD") {
+    const onLeave = (ctx.leaves || []).filter((leave) => computeLeaveStatus(leave) === "approved" && coversDate(leave, today) && inFocus(leave.site_name));
+    const open = tasks.filter((task) => ["pending", "in_progress"].includes(norm(task.status)));
+    const delayed = tasks.filter((task) => {
+      const due = String(task.due_date || "").slice(0, 10);
+      return due && due < today && !["completed", "not_applicable"].includes(norm(task.status));
+    });
+    const from = startOfWeek(today);
+    const to = addDays(from, 6);
+    const reports = dprs.filter((row) => {
+      const day = String(row.date || "").slice(0, 10);
+      return day >= from && day <= to;
+    });
+    return siteAnswer(`${focus || ctx.mine.join(", ")} on ${prettyDate(today)}: ${open.length} pending tasks, ${delayed.length} delayed, ${onLeave.length} on leave, ${reports.length} daily reports this week.`);
+  }
+
+  return null;
 }
 
 async function answerSiteDipQuery(rawText, user) {
@@ -545,6 +1108,13 @@ async function answerSiteDipQuery(rawText, user) {
     };
   }
 
+  const greeting = /^(hi|hello|hey|yo)\b/.test(q) || /\b(thank|thanks|thx)\b/.test(q);
+  const intent = classifySiteIntent(text) || (greeting ? null : await classifySiteIntentWithGroq(text));
+  if (intent) {
+    const fromIntent = answerFromSiteIntent(intent, text, ctx, focus, inFocus);
+    if (fromIntent) return fromIntent;
+  }
+
   if (
     /^(hi|hello|hey|yo)\b/.test(q) ||
     /\b(help|what can you|capabilities)\b/.test(q)
@@ -556,11 +1126,60 @@ async function answerSiteDipQuery(rawText, user) {
     return { text: "Anytime. Ask about reports, material, tasks, or leave on your sites.", chips: DIP_SITE_CHIPS };
   }
 
-  if (/\b(my sites|which sites|assigned sites)\b/.test(q)) {
+  if (/\b(my sites|which sites|assigned sites|badha site|badha sites)\b/.test(q)) {
     return {
       text: `Your sites: ${ctx.mine.join(", ")}.`,
       chips: DIP_SITE_CHIPS,
     };
+  }
+
+  if (/\b(active projects|how many projects|ketli sites|ketla site)\b/.test(q)) {
+    return {
+      text: `You have ${ctx.mine.length} assigned site${ctx.mine.length === 1 ? "" : "s"}: ${ctx.mine.join(", ")}.`,
+      chips: DIP_SITE_CHIPS,
+    };
+  }
+
+  if (/\b(worker|workers|labour|labor|majur|majuri|kamdar)\b/.test(q)) {
+    let day = today;
+    if (/\b(yesterday|kal|kale)\b/.test(q) && !/\baaje\b/.test(q)) day = addDays(today, -1);
+    const rows = ctx.dprs.filter((row) => String(row.date || "").slice(0, 10) === day && inFocus(row.site));
+    const bySite = new Map();
+    rows.forEach((row) => {
+      const count = manpowerCount(row.payload);
+      if (count == null) return;
+      const evening = row.report_type !== "morning";
+      const prev = bySite.get(row.site);
+      if (!prev || (evening && !prev.evening)) bySite.set(row.site, { count, evening });
+    });
+    const names = focus ? [focus] : ctx.mine;
+    if (!bySite.size) {
+      return {
+        text: `No worker count is recorded in the ${day === today ? "today's" : prettyDate(day)} DPR for ${names.join(", ")}.`,
+        chips: DIP_SITE_CHIPS,
+      };
+    }
+    const parts = names.map((site) => {
+      const found = [...bySite.entries()].find(([name]) => norm(name) === norm(site));
+      return found ? `${found[0]}: ${found[1].count} workers` : `${site}: no count in the DPR`;
+    });
+    return {
+      text: `${day === today ? "Today" : prettyDate(day)} — ${parts.join(". ")}.`,
+      chips: DIP_SITE_CHIPS,
+    };
+  }
+
+  if (/\b(progress|summary of work|work summary)\b/.test(q) || /progress thayu/.test(q)) {
+    let day = today;
+    if (/\b(yesterday|kal|kale)\b/.test(q) && !/\baaje\b/.test(q)) day = addDays(today, -1);
+    const rows = ctx.dprs
+      .filter((row) => String(row.date || "").slice(0, 10) === day && inFocus(row.site) && row.payload?.summary)
+      .sort((a, b) => (a.report_type === "morning" ? 1 : 0) - (b.report_type === "morning" ? 1 : 0));
+    if (!rows.length) {
+      return { text: `No progress note is saved in the DPR for ${prettyDate(day)}.`, chips: DIP_SITE_CHIPS };
+    }
+    const text = rows.slice(0, 3).map((row) => `${row.site}: ${String(row.payload.summary).trim()}`).join("\n\n");
+    return { text, chips: DIP_SITE_CHIPS };
   }
 
   if (/\b(dashboard|summary|overview|snapshot)\b/.test(q)) {
@@ -750,10 +1369,10 @@ async function answerSiteDipQuery(rawText, user) {
     };
   }
 
-  if (/\b(task|tasks|overdue|pending|in progress)\b/.test(q)) {
+  if (/\b(task|tasks|overdue|pending|in progress|activity|activities|delay|delayed)\b/.test(q) || /\bwork\b/.test(q)) {
     let list = ctx.tasks.filter((task) => inFocus(task.site_name));
     let heading = "tasks";
-    if (/\boverdue|delayed\b/.test(q)) {
+    if (/\b(overdue|delayed|delay)\b/.test(q)) {
       list = list.filter((task) => {
         const due = String(task.due_date || "").slice(0, 10);
         return due && due < today && !["completed", "not_applicable"].includes(norm(task.status));
@@ -1408,7 +2027,7 @@ async function answerOfficeDipQuery(rawText, user) {
   };
 }
 
-const GROQ_MODEL = "llama-3.3-70b-versatile";
+const GROQ_MODEL = "openai/gpt-oss-120b";
 
 function chipsFor(scope) {
   if (scope === "hr") return DIP_HR_CHIPS;
@@ -1755,6 +2374,149 @@ function readGroqAnswer(raw, scope, question) {
   };
 }
 
+function clipText(value, max = 220) {
+  const text = String(value || "").replace(/\s+/g, " ").trim();
+  if (!text) return "";
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function tally(list, keyFn) {
+  const map = new Map();
+  (list || []).forEach((item) => {
+    const key = keyFn(item) || "Unknown";
+    map.set(key, (map.get(key) || 0) + 1);
+  });
+  return [...map.entries()].map(([name, count]) => ({ name, count }));
+}
+
+async function recordsForPrompt(scope, user) {
+  const today = ymd();
+  const weekFrom = startOfWeek(today);
+  const weekTo = addDays(weekFrom, 6);
+  const monthFrom = `${today.slice(0, 7)}-01`;
+  const yesterday = addDays(today, -1);
+  if (scope === "site") {
+    const ctx = await loadSiteContext(user);
+    if (ctx.empty) return { today, sites: [], note: "No site is assigned to this user." };
+    const onDate = (value, day) => String(value || "").slice(0, 10) === day;
+    const inWeek = (value) => {
+      const day = String(value || "").slice(0, 10);
+      return day >= weekFrom && day <= weekTo;
+    };
+    const inMonth = (value) => String(value || "").slice(0, 10) >= monthFrom && String(value || "").slice(0, 10) <= today;
+    const open = (ctx.tasks || []).filter((task) => ["pending", "in_progress"].includes(norm(task.status)));
+    const overdue = (ctx.tasks || []).filter((task) => {
+      const due = String(task.due_date || "").slice(0, 10);
+      return due && due < today && !["completed", "not_applicable"].includes(norm(task.status));
+    });
+    const days = oneReportPerSiteDay(ctx.dprs);
+    const siteDays = days.slice(0, 8).map(daySnapshot);
+    const earlierDays = days.slice(8, 28).map(compactDay);
+    const onLeaveToday = (ctx.leaves || []).filter(
+      (leave) => computeLeaveStatus(leave) === "approved" && coversDate(leave, today),
+    );
+    return {
+      today,
+      yesterday,
+      weekFrom,
+      weekTo,
+      monthFrom,
+      assignedSites: ctx.mine,
+      notes: [
+        "Answer from every section, not only siteDays. siteDays is the latest daily reports in full. earlierDays is older daily reports in short form. Use the row whose date matches the question.",
+        "equipmentUsed and earlierDays.equipment are equipment on site. cement.used is cement consumed. arrivedMaterialTotals is everything that arrived, summed by type. materialOnDailyReport is material written on the daily report.",
+        "femaleWorkers, maleWorkers, and manpower.gender are worker counts. progress and planning are the work notes. visitors are site-visit instructions written on the daily report. tasks, tickets, leaves, team, weeklyReports, and siteVisits are separate sections.",
+      ],
+      siteDays,
+      earlierDays,
+      dailyReportCount: {
+        today: (ctx.dprs || []).filter((row) => onDate(row.date, today)).length,
+        thisWeek: (ctx.dprs || []).filter((row) => inWeek(row.date)).length,
+        thisMonth: (ctx.dprs || []).filter((row) => inMonth(row.date)).length,
+      },
+      weeklyReports: (ctx.wprs || []).slice(0, 15).map((row) => ({
+        date: row.report_date,
+        site: row.site_name,
+        number: row.report_number,
+        engineer: row.engineer_name,
+      })),
+      siteVisits: (ctx.visits || []).slice(0, 12).map((row) => ({
+        date: row.visit_date,
+        site: row.site_name,
+        by: row.reporter_name,
+        designation: row.designation,
+        progress: clipText(row.progress_of_work, 300),
+        quality: clipText(row.quality_observations, 200),
+        safety: clipText(row.safety_concerns, 200),
+        issues: clipText(row.issues_concerns, 200),
+        instructions: clipText(row.site_visit_instructions || row.key_instructions, 300),
+      })),
+      team: (ctx.users || []).slice(0, 40).map((person) => ({
+        name: person.name || person.username,
+        role: person.role,
+        department: person.department,
+        site: person.site_name,
+      })),
+      leaves: {
+        onLeaveToday: onLeaveToday.slice(0, 20).map((leave) => ({
+          name: leave.name || leave.user_name,
+          type: leave.leave_type,
+          from: leave.from_date,
+          to: leave.to_date,
+          site: leave.site_name,
+        })),
+        recent: (ctx.leaves || []).slice(0, 25).map((leave) => ({
+          name: leave.name || leave.user_name,
+          type: leave.leave_type,
+          from: leave.from_date,
+          to: leave.to_date,
+          status: computeLeaveStatus(leave),
+          site: leave.site_name,
+        })),
+      },
+      tasks: {
+        pending: (ctx.tasks || []).filter((task) => norm(task.status) === "pending").length,
+        inProgress: (ctx.tasks || []).filter((task) => norm(task.status) === "in_progress").length,
+        completed: (ctx.tasks || []).filter((task) => norm(task.status) === "completed").length,
+        overdue: overdue.length,
+        pendingBySite: tally((ctx.tasks || []).filter((task) => norm(task.status) === "pending"), (task) => task.site_name),
+        overdueBySite: tally(overdue, (task) => task.site_name),
+        openItems: open.slice(0, 40).map((task) => ({
+          title: task.title,
+          site: task.site_name,
+          status: task.status,
+          due: task.due_date,
+          assignedTo: task.assigned_to,
+          priority: task.priority,
+        })),
+        recentlyCompleted: (ctx.tasks || []).filter((task) => norm(task.status) === "completed").slice(0, 15).map((task) => ({
+          title: task.title,
+          site: task.site_name,
+          due: task.due_date,
+        })),
+      },
+      openTickets: (ctx.tickets || []).filter((ticket) => norm(ticket.status) === "open").slice(0, 20).map((ticket) => ({
+        title: ticket.task_title,
+        site: ticket.site_name,
+        status: ticket.status,
+        query: clipText(ticket.query, 180),
+        raisedBy: ticket.raised_by_name || ticket.raised_by,
+      })),
+      arrivedMaterialTotals: arrivedTotals(ctx.materials),
+      arrivedMaterialRecent: (ctx.materials || []).slice(0, 20).map((row) => ({
+        date: String(row.created_at || "").slice(0, 10),
+        site: row.site_name,
+        category: row.category_name,
+        subcategory: row.subcategory_name,
+        type: row.type_name,
+        quantity: row.quantity,
+        unit: row.unit,
+      })),
+    };
+  }
+  return { today, weekFrom, weekTo, scope, note: "Answer from portal records for this login only." };
+}
+
 async function groqChat(messages, tools) {
   const response = await fetch("/api/groq", {
     method: "POST",
@@ -1772,77 +2534,28 @@ async function groqChat(messages, tools) {
 }
 
 async function answerWithGroq(question, user, scope, history) {
-  const today = ymd();
-  const weekFrom = startOfWeek(today);
-  const weekTo = addDays(weekFrom, 6);
-  const allowed = (LOOKUP_DATASETS[scope] || LOOKUP_DATASETS.admin).join(", ");
+  const records = await recordsForPrompt(scope, user);
   const prior = (history || [])
     .slice(-6)
     .filter((turn) => turn?.content)
     .map((turn) => ({ role: turn.role === "assistant" ? "assistant" : "user", content: String(turn.content) }));
-  const messages = [
+  const message = await groqChat([
     {
       role: "system",
-      content: `You are DIP Bot. Answer like ChatGPT, in the user's language (English, Hindi, or Roman Gujarati). Today is ${today}. This week is ${weekFrom} to ${weekTo}. athvadia means this week. For any fact, number, list, or total, call lookup before you answer. Allowed datasets: ${allowed}. Use mode count for how many receipts or records, mode sum for quantities, mode list only when the user asks to see or show records, mode balance for remaining leave. Pass dates as YYYY-MM-DD. After lookup, reply in one or two sentences using only that result. Do not invent numbers. Do not paste a table in the text.`,
+      content: "You are DIP Bot for a construction site portal. The user writes English, Hindi, or Gujarati in Roman script. aaje/aje means today, gai kale or kal means yesterday, athvadia means this week, ketla/ketli means how many. Answer any question about this user's sites from the JSON: daily report progress, planning, workers by gender, equipment, cement used or received, materials on the report, materials that arrived (arrivedMaterialTotals), concrete, visitors, cube tests, tasks, tickets, leave, team, weekly reports, and site visits. Match the date in siteDays or earlierDays. Quote the numbers that are present. If only one part is blank, still answer the rest. Do not invent numbers. Do not reply with a menu of topics. One or two sentences, or a short list if they ask to show records. Plain text in the user's language.",
     },
     ...prior,
-    { role: "user", content: question },
-  ];
-  const lookupTool = {
-    type: "function",
-    function: {
-      name: "lookup",
-      description: "Read the signed-in user's portal records. Call this for every factual question.",
-      parameters: {
-        type: "object",
-        properties: {
-          dataset: { type: "string", enum: LOOKUP_DATASETS[scope] || LOOKUP_DATASETS.admin },
-          mode: { type: "string", enum: ["count", "sum", "list", "balance"] },
-          category: { type: "string", description: "Material category such as civil, or a department." },
-          subcategory: { type: "string" },
-          type: { type: "string", description: "Material type, report type, or role." },
-          site: { type: "string" },
-          status: { type: "string", description: "pending, open, overdue, approved, present, late, absent." },
-          person: { type: "string" },
-          from: { type: "string" },
-          to: { type: "string" },
-        },
-        required: ["dataset", "mode"],
-      },
+    {
+      role: "user",
+      content: JSON.stringify({ question, records }),
     },
+  ]);
+  const text = String(message?.content || "").trim();
+  if (!text) return null;
+  const parsed = text.startsWith("{") ? readGroqAnswer(text, scope, question) : null;
+  return {
+    text: parsed?.text || text,
   };
-
-  let lookup = null;
-  for (let step = 0; step < 3; step += 1) {
-    const message = await groqChat(messages, [lookupTool]);
-    if (!message) return null;
-    const calls = message.tool_calls || [];
-    if (!calls.length) {
-      const text = String(message.content || "").trim();
-      if (!text) return null;
-      const qn = norm(question);
-      const smallTalk = /^(hi|hello|hey|thanks|thank you|ok|okay)\b/.test(qn) || /\b(help|what can you)\b/.test(qn);
-      if (!lookup && !smallTalk) return null;
-      const parsed = text.startsWith("{") ? readGroqAnswer(text, scope, question) : null;
-      const showSheet = lookup?.mode === "list" && !asksForSummary(norm(question)) && lookup.rows?.length;
-      return {
-        text: parsed?.text || text,
-        columns: showSheet ? lookup.columns : null,
-        rows: showSheet ? lookup.rows : null,
-        chips: chipsFor(scope),
-      };
-    }
-    messages.push(message);
-    for (const call of calls) {
-      if (call.function?.name === "lookup") lookup = await runLookup(scope, user, call.function.arguments);
-      messages.push({
-        role: "tool",
-        tool_call_id: call.id,
-        content: JSON.stringify(lookup?.forModel || { error: "Lookup failed." }),
-      });
-    }
-  }
-  return null;
 }
 
 async function resolveDipQuery(rawText, user, options = {}) {
@@ -1851,6 +2564,9 @@ async function resolveDipQuery(rawText, user, options = {}) {
   const q = norm(text);
   if (q && asksOwnLeaveBalance(q) && (scope === "site" || scope === "office")) {
     return ownLeaveBalanceAnswer(user, chipsFor(scope));
+  }
+  if (scope === "site") {
+    return answerSiteDipQuery(rawText, user);
   }
   if (text) {
     try {
@@ -1862,9 +2578,6 @@ async function resolveDipQuery(rawText, user, options = {}) {
   }
   if (scope === "hr") {
     return answerHrDipQuery(rawText, user);
-  }
-  if (norm(options.scope) === "site") {
-    return answerSiteDipQuery(rawText, user);
   }
   if (scope === "office") {
     return answerOfficeDipQuery(rawText, user);

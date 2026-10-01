@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import ExcelJS from "exceljs";
 import { supabase } from "../supabase";
 import { answerDipQuery, DIP_CHIPS, DIP_HR_CHIPS, DIP_SITE_CHIPS, DIP_OFFICE_CHIPS } from "../lib/dipBot";
+import { BillActions, billExcelValue, paintBillLinks, uploadMaterialBill } from "./MaterialBill";
 import logoUrl from "../assets/logo.png";
 import "./PortalFloaters.css";
 
@@ -282,7 +283,7 @@ function SeenTicks({ seen, light }) {
   );
 }
 
-function ResizablePanel({ storageKey, label, children }) {
+function ResizablePanel({ storageKey, label, className = "", children }) {
   const { size, onResizeStart } = usePanelSize(storageKey);
   const vvStyle = useMobileViewportLock();
   const [isMobile, setIsMobile] = useState(
@@ -308,7 +309,7 @@ function ResizablePanel({ storageKey, label, children }) {
 
   return (
     <div
-      className={`pf-panel${vvStyle ? " is-mobile-sheet" : ""}`}
+      className={`pf-panel${className ? ` ${className}` : ""}${vvStyle ? " is-mobile-sheet" : ""}`}
       role="dialog"
       aria-label={label}
       style={panelStyle}
@@ -2132,7 +2133,10 @@ function MaterialPanel({ user, onClose }) {
   const [adding, setAdding] = useState("");
   const [draftName, setDraftName] = useState("");
   const [catalogSaving, setCatalogSaving] = useState(false);
+  const [billFile, setBillFile] = useState(null);
+  const [billPreview, setBillPreview] = useState("");
   const toastTimer = useRef(null);
+  const billPreviewRef = useRef("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -2170,7 +2174,10 @@ function MaterialPanel({ user, onClose }) {
     setSiteName(sites[0]);
   }, [siteName, sites]);
 
-  useEffect(() => () => window.clearTimeout(toastTimer.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(toastTimer.current);
+    if (billPreviewRef.current) URL.revokeObjectURL(billPreviewRef.current);
+  }, []);
 
   const showToast = (message) => {
     setToast(message);
@@ -2214,7 +2221,7 @@ function MaterialPanel({ user, onClose }) {
   }, [records, search, filterCategory, filterSubcategory, filterType, catalog]);
 
   const downloadExcel = async () => {
-    const headers = ["Date", "Site", "Category", "Subcategory", "Type", "Quantity", "Unit", "Recorded by"];
+    const headers = ["Date", "Site", "Category", "Subcategory", "Type", "Quantity", "Unit", "Bill photo", "Recorded by"];
     const rows = filteredRecords.length
       ? filteredRecords.map((row) => [
           row.created_at ? new Date(row.created_at).toLocaleString("en-IN") : "",
@@ -2224,6 +2231,7 @@ function MaterialPanel({ user, onClose }) {
           row.type_name || "",
           row.quantity ?? "",
           row.unit || "",
+          billExcelValue(row.bill_url),
           row.recorded_by || "",
         ])
       : [headers.map(() => "")];
@@ -2231,7 +2239,7 @@ function MaterialPanel({ user, onClose }) {
     const sheet = book.addWorksheet("Arrived material");
     sheet.columns = [
       { width: 22 }, { width: 22 }, { width: 16 }, { width: 16 },
-      { width: 14 }, { width: 12 }, { width: 12 }, { width: 20 },
+      { width: 14 }, { width: 12 }, { width: 12 }, { width: 42 }, { width: 20 },
     ];
     const header = sheet.addRow(headers);
     header.height = 22;
@@ -2247,6 +2255,7 @@ function MaterialPanel({ user, onClose }) {
           cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFECFDF5" } };
         });
       }
+      paintBillLinks(added, 8);
     });
     sheet.views = [{ state: "frozen", ySplit: 1 }];
     const buffer = await book.xlsx.writeBuffer();
@@ -2398,6 +2407,16 @@ function MaterialPanel({ user, onClose }) {
     }
     setSaving(true);
     setError("");
+    let billUrl = null;
+    if (billFile) {
+      try {
+        billUrl = await uploadMaterialBill(billFile, siteName);
+      } catch (err) {
+        setSaving(false);
+        setError(err.message || "Could not upload the bill photo.");
+        return;
+      }
+    }
     const { error: saveErr } = await supabase.from("site_material_arrivals").insert({
       site_name: siteName || null,
       user_name: userName || null,
@@ -2407,6 +2426,7 @@ function MaterialPanel({ user, onClose }) {
       type_name: type.name,
       quantity: qty,
       unit,
+      ...(billUrl ? { bill_url: billUrl } : {}),
     });
     setSaving(false);
     if (saveErr) {
@@ -2414,12 +2434,16 @@ function MaterialPanel({ user, onClose }) {
       return;
     }
     setQuantity("");
+    if (billPreviewRef.current) URL.revokeObjectURL(billPreviewRef.current);
+    billPreviewRef.current = "";
+    setBillFile(null);
+    setBillPreview("");
     showToast("Saved");
     await load();
   };
 
   return (
-    <ResizablePanel storageKey="pf-size-material" label="Arrived material">
+    <ResizablePanel storageKey="pf-size-material" label="Arrived material" className="pf-panel-material">
       <div className="pf-head pf-head-material">
         <div className="pf-head-avatar">
           <Ico name="box" />
@@ -2507,6 +2531,7 @@ function MaterialPanel({ user, onClose }) {
                     <th>Type</th>
                     <th>Qty</th>
                     <th>Unit</th>
+                    <th>Bill</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2518,6 +2543,7 @@ function MaterialPanel({ user, onClose }) {
                       <td>{row.type_name}</td>
                       <td>{row.quantity}</td>
                       <td>{row.unit}</td>
+                      <td><BillActions url={row.bill_url} /></td>
                     </tr>
                   ))}
                 </tbody>
@@ -2619,6 +2645,31 @@ function MaterialPanel({ user, onClose }) {
                 ))}
               </select>
             </span>
+          </label>
+        )}
+        {typeId && (
+          <label className="pf-mat-field">
+            Bill photo
+            <span className="pf-mat-optional">Optional</span>
+            <input
+              type="file"
+              accept="image/*"
+              onChange={(event) => {
+                const file = event.target.files?.[0] || null;
+                if (billPreviewRef.current) URL.revokeObjectURL(billPreviewRef.current);
+                if (!file) {
+                  billPreviewRef.current = "";
+                  setBillFile(null);
+                  setBillPreview("");
+                  return;
+                }
+                const url = URL.createObjectURL(file);
+                billPreviewRef.current = url;
+                setBillFile(file);
+                setBillPreview(url);
+              }}
+            />
+            {billPreview && <img className="pf-mat-bill-preview" src={billPreview} alt="Selected bill" />}
           </label>
         )}
         {typeId && (

@@ -46,6 +46,8 @@ alter table public.material_categories enable row level security;
 alter table public.material_subcategories enable row level security;
 alter table public.material_types enable row level security;
 alter table public.material_units enable row level security;
+alter table public.site_material_arrivals add column if not exists bill_url text;
+
 alter table public.site_material_arrivals enable row level security;
 
 drop policy if exists material_categories_all on public.material_categories;

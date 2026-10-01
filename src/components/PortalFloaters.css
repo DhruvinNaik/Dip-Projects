@@ -162,6 +162,43 @@
   background: #fff;
   font-weight: 600;
 }
+.pf-mat-field input[type="file"] {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  border: 1.5px dashed #6ee7b7;
+  border-radius: 12px;
+  padding: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #065f46;
+  background: #f0fdf4;
+}
+.pf-mat-field input[type="file"]::file-selector-button,
+.pf-mat-field input[type="file"]::-webkit-file-upload-button {
+  margin-right: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #047857;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+[data-theme="dark"] .pf-mat-field input[type="file"] {
+  background: #13261c;
+  color: #d1fae5;
+  border-color: #047857;
+}
+[data-theme="dark"] .pf-mat-field input[type="file"]::file-selector-button,
+[data-theme="dark"] .pf-mat-field input[type="file"]::-webkit-file-upload-button {
+  background: #059669;
+  color: #fff;
+}
+.pf-mat-optional { font-weight: 600; color: #64748b; }
+.pf-mat-bill-preview { width: 72px; height: 72px; object-fit: cover; border-radius: 8px; border: 1px solid #e2e8f0; }
 .pf-mat-qty { display: flex; gap: 8px; align-items: center; }
 .pf-mat-qty input { flex: 1; min-width: 0; }
 .pf-mat-qty select { width: 118px; }
@@ -289,6 +326,12 @@
   align-items: center;
   justify-content: center;
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.2);
+}
+
+.pf-panel.pf-panel-material {
+  /* Sit above the top material button: 24 stack + 3×48 buttons + 2×10 gaps + 12 gap */
+  bottom: 200px;
+  max-height: calc(100vh - 216px);
 }
 
 .pf-panel {
@@ -1274,7 +1317,8 @@
     cursor: default;
   }
 
-  .pf-panel {
+  .pf-panel,
+  .pf-panel.pf-panel-material {
     /* Panel stays above backdrop and keeps its own scroll */
     overscroll-behavior: contain;
     right: 0;

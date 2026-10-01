@@ -1,0 +1,24 @@
+.bill-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.bill-actions a,
+.bill-actions button {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: 1px solid #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: none;
+}
+.bill-actions a:hover,
+.bill-actions button:hover {
+  background: #d1fae5;
+}

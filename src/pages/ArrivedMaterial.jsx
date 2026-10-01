@@ -280,6 +280,8 @@ export default function ArrivedMaterial({ user }) {
   const billPreviewRef = useRef("");
   const catsRef = useRef(null);
 
+  const [filterOpen, setFilterOpen] = useState(false);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError("");
@@ -587,6 +589,8 @@ export default function ArrivedMaterial({ user }) {
   const subcategory = catalog.subcategories.find((row) => row.id === subcategoryId);
   const type = catalog.types.find((row) => row.id === typeId);
 
+  const activeFilters = [filterCategory, filterSubcategory, filterType].filter(Boolean).length;
+
   return (
     <div className="am-page">
       <div className="am-top">
@@ -766,7 +770,19 @@ export default function ArrivedMaterial({ user }) {
             placeholder="Search category, type, unit"
             onChange={(event) => setSearch(event.target.value)}
           />
+          <button
+            type="button"
+            className={`am-filter-btn${activeFilters ? " has-filters" : ""}`}
+            aria-label="Open filters"
+            onClick={() => setFilterOpen(true)}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            </svg>
+            {activeFilters > 0 && <span className="am-filter-badge">{activeFilters}</span>}
+          </button>
           <select
+            className="am-filter-select"
             value={filterCategory}
             aria-label="Filter category"
             onChange={(event) => pickCategory(event.target.value)}
@@ -777,6 +793,7 @@ export default function ArrivedMaterial({ user }) {
             ))}
           </select>
           <select
+            className="am-filter-select"
             value={filterSubcategory}
             aria-label="Filter subcategory"
             onChange={(event) => {
@@ -799,6 +816,7 @@ export default function ArrivedMaterial({ user }) {
             ))}
           </select>
           <select
+            className="am-filter-select"
             value={filterType}
             aria-label="Filter type"
             onChange={(event) => {
@@ -869,6 +887,78 @@ export default function ArrivedMaterial({ user }) {
             <button type="button" className="am-save" disabled={catalogSaving} onClick={addCatalog}>
               {catalogSaving ? "Adding…" : "Add"}
             </button>
+          </div>
+        </div>
+      )}
+      {filterOpen && (
+        <div className="am-pop am-filter-pop" role="dialog" aria-label="Filters" onClick={() => setFilterOpen(false)}>
+          <div className="am-pop-card" onClick={(event) => event.stopPropagation()}>
+            <div className="am-pop-head">
+              <strong>Filters</strong>
+              <button type="button" onClick={() => setFilterOpen(false)}>Close</button>
+            </div>
+
+            <label className="am-pop-field">
+              Category
+              <select className="am-pop-select" value={filterCategory} onChange={(event) => pickCategory(event.target.value)}>
+                <option value="">All categories</option>
+                {sortedCategories.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="am-pop-field">
+              Subcategory
+              <select
+                className="am-pop-select"
+                value={filterSubcategory}
+                onChange={(event) => {
+                  const id = event.target.value;
+                  if (!id) {
+                    setSubcategoryId("");
+                    setTypeId("");
+                    setQuantity("");
+                    setUnit("");
+                    setFilterSubcategory("");
+                    setFilterType("");
+                    return;
+                  }
+                  pickSubcategory(id);
+                }}
+              >
+                <option value="">All subcategories</option>
+                {sortedFilterSubcategories.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="am-pop-field">
+              Type
+              <select
+                className="am-pop-select"
+                value={filterType}
+                onChange={(event) => {
+                  setTypeId(event.target.value);
+                  setFilterType(event.target.value);
+                }}
+              >
+                <option value="">All types</option>
+                {sortedFilterTypes.map((row) => (
+                  <option key={row.id} value={row.id}>{row.name}</option>
+                ))}
+              </select>
+            </label>
+
+            <div className="am-pop-actions">
+              <button type="button" className="am-excel" disabled={!activeFilters} onClick={() => pickCategory("")}>
+                Clear
+              </button>
+              <button type="button" className="am-save" onClick={() => setFilterOpen(false)}>
+                Done
+              </button>
+            </div>
           </div>
         </div>
       )}

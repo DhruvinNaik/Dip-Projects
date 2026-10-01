@@ -965,6 +965,7 @@ export function monthKeyOf(dateStr) {
   if (!dayKey) return null;
   return `${dayKey.slice(0, 4)}-${dayKey.slice(5, 7)}`;
 }
+
 function monthLabelOf(key) {
   const [y, m] = key.split("-").map(Number);
   return new Date(y, m - 1, 1).toLocaleDateString("en-IN", {

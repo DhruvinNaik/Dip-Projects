@@ -73,12 +73,59 @@ function categoryStyle(name, selected) {
   };
 }
 
+function CategorySearch({ categories, categoryId, onPick }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const selected = categories.find((row) => row.id === categoryId);
+  const needle = query.trim().toLowerCase();
+  const matches = categories.filter((row) => !needle || String(row.name || "").toLowerCase().includes(needle));
+
+  return (
+    <div className="am-cat-search">
+      <input
+        value={open ? query : (selected?.name || "")}
+        placeholder="Search category"
+        aria-label="Search category"
+        onFocus={() => {
+          setQuery("");
+          setOpen(true);
+        }}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setOpen(true);
+        }}
+        onBlur={() => window.setTimeout(() => setOpen(false), 120)}
+      />
+      {open && (
+        <ul>
+          {matches.map((row) => (
+            <li key={row.id}>
+              <button
+                type="button"
+                className={row.id === categoryId ? "is-on" : ""}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onPick(row.id);
+                  setQuery("");
+                  setOpen(false);
+                }}
+              >
+                {row.name}
+              </button>
+            </li>
+          ))}
+          {!matches.length && <li className="am-cat-search-empty">No category</li>}
+        </ul>
+      )}
+    </div>
+  );
+}
 function hexPoint(index) {
   const cols = 3;
   const row = Math.floor(index / cols);
   const col = index % cols;
-  const x = col * 90 + (row % 2 ? 45 : 0);
-  const y = row * 74;
+  const x = col * 78 + (row % 2 ? 39 : 0);
+  const y = row * 64;
   return { x, y };
 }
 
@@ -574,7 +621,10 @@ export default function ArrivedMaterial({ user }) {
           )}
         </div>
 
-        <div className="am-label">Category</div>
+        <div className="am-cat-head">
+          <div className="am-label">Category</div>
+          <CategorySearch categories={sortedCategories} categoryId={categoryId} onPick={pickCategory} />
+        </div>
         <div className="am-cats">
           <button type="button" className="am-cat am-other" onClick={() => openAdd("category")}>
             + Other

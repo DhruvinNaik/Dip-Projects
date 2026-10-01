@@ -83,6 +83,61 @@
   color: var(--ink3);
 }
 .am-block .am-label:first-of-type { margin-top: 0; }
+.am-cat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.am-cat-head .am-label { margin: 0; }
+.am-cat-search { position: relative; width: min(220px, 58%); min-width: 0; }
+.am-cat-search input {
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  border: 1px solid var(--line2);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--ink);
+  padding: 0 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+}
+.am-cat-search ul {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 180px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line2);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 13, 10, 0.16);
+}
+.am-cat-search li { background: #fff; }
+.am-cat-search button {
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 7px;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+.am-cat-search button.is-on,
+.am-cat-search button:hover { background: #ecfdf5; color: #047857; }
+.am-cat-search-empty { padding: 7px 8px; font-size: 12px; color: var(--ink3); }
 .am-cat {
   position: relative;
   flex: 0 0 112px;
@@ -284,7 +339,16 @@
 [data-theme="dark"] .am-table tbody tr:nth-child(even) td { background: #13261c; }
 [data-theme="dark"] .am-error { background: #3f1d1d; color: #fecaca; border-color: #7f1d1d; }
 [data-theme="dark"] .am-path { color: #6ee7b7; }
-[data-theme="dark"] .am-honey { background: radial-gradient(circle at 50% 50%, #1a2420 0%, transparent 68%); }
+[data-theme="dark"] .am-cat-search input,
+[data-theme="dark"] .am-cat-search ul,
+[data-theme="dark"] .am-cat-search li,
+[data-theme="dark"] .am-cat-search button {
+  background: #1e1c19;
+  color: #f0ede8;
+  border-color: #3a3733;
+}
+[data-theme="dark"] .am-cat-search button.is-on,
+[data-theme="dark"] .am-cat-search button:hover { background: #052e16; color: #6ee7b7; }
 [data-theme="dark"] .am-bill input[type="file"] {
   background: #13261c;
   color: #d1fae5;

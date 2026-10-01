@@ -74,15 +74,25 @@ function categoryStyle(name, selected) {
 }
 
 function CategorySearch({ categories, categoryId, onPick }) {
+  const inputRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const selected = categories.find((row) => row.id === categoryId);
   const needle = query.trim().toLowerCase();
   const matches = categories.filter((row) => !needle || String(row.name || "").toLowerCase().includes(needle));
 
+  const choose = (id) => {
+    onPick(id);
+    setQuery("");
+    setOpen(false);
+    inputRef.current?.blur();
+    window.setTimeout(() => inputRef.current?.blur(), 0);
+  };
+
   return (
     <div className="am-cat-search">
       <input
+        ref={inputRef}
         value={open ? query : (selected?.name || "")}
         placeholder="Search category"
         aria-label="Search category"
@@ -105,9 +115,7 @@ function CategorySearch({ categories, categoryId, onPick }) {
                 className={row.id === categoryId ? "is-on" : ""}
                 onMouseDown={(event) => {
                   event.preventDefault();
-                  onPick(row.id);
-                  setQuery("");
-                  setOpen(false);
+                  choose(row.id);
                 }}
               >
                 {row.name}

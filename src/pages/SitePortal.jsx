@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Navbar from "../components/Navbar";
 import PortalFloaters from "../components/PortalFloaters";
@@ -1850,21 +1850,71 @@ const markLeavesSeen = useCallback(async (u) => {
     setLoadingReports(false);
   }, []);
 
-  useEffect(() => {
-    if (sidebarOpen && window.innerWidth <= 900) {
-      document.body.style.overflow = "hidden";
-      document.documentElement.style.overflow = "hidden";
-    } else {
-      document.body.style.overflow = "";
-      document.documentElement.style.overflow = "";
-      document.body.style.position = "";
-      document.body.style.width = "";
-    }
+  useLayoutEffect(() => {
+    const mobile = sidebarOpen && window.innerWidth <= 900;
+    if (!mobile) return undefined;
+
+    const nav = document.querySelector(".app-navbar");
+    const navH = nav?.getBoundingClientRect().height || (window.innerWidth <= 600 ? 56 : 75);
+
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+    document.body.style.paddingTop = `${navH}px`;
+
+    const place = () => {
+      if (window.innerWidth > 900) return;
+      const bar = document.querySelector(".app-navbar");
+      if (bar) {
+        bar.style.position = "fixed";
+        bar.style.top = "0px";
+        bar.style.left = "0";
+        bar.style.right = "0";
+        bar.style.width = "100%";
+        bar.style.zIndex = "10030";
+      }
+      const navBottom = bar?.getBoundingClientRect().bottom ?? navH;
+      const viewH = window.visualViewport?.height || window.innerHeight;
+      document.querySelectorAll(".body .sidebar, .body .sb-backdrop").forEach((el) => {
+        el.style.top = "0px";
+        let top = navBottom - el.getBoundingClientRect().top;
+        el.style.top = `${top}px`;
+        const miss = navBottom - el.getBoundingClientRect().top;
+        if (Math.abs(miss) > 0.5) {
+          top += miss;
+          el.style.top = `${top}px`;
+        }
+        const nextTop = el.getBoundingClientRect().top;
+        const height = Math.max(viewH - nextTop, 0);
+        el.style.height = `${height}px`;
+        el.style.maxHeight = `${height}px`;
+      });
+    };
+
+    place();
+    window.visualViewport?.addEventListener("resize", place);
+    window.visualViewport?.addEventListener("scroll", place);
+    window.addEventListener("resize", place);
+
     return () => {
+      window.visualViewport?.removeEventListener("resize", place);
+      window.visualViewport?.removeEventListener("scroll", place);
+      window.removeEventListener("resize", place);
       document.body.style.overflow = "";
       document.documentElement.style.overflow = "";
-      document.body.style.position = "";
-      document.body.style.width = "";
+      document.body.style.paddingTop = "";
+      if (nav) {
+        nav.style.position = "";
+        nav.style.top = "";
+        nav.style.left = "";
+        nav.style.right = "";
+        nav.style.width = "";
+        nav.style.zIndex = "";
+      }
+      document.querySelectorAll(".body .sidebar, .body .sb-backdrop").forEach((el) => {
+        el.style.top = "";
+        el.style.height = "";
+        el.style.maxHeight = "";
+      });
     };
   }, [sidebarOpen]);
 useEffect(() => {

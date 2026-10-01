@@ -44,27 +44,30 @@ function same(left, right) {
 }
 
 const CATEGORY_COLORS = [
-  { bg: "#ecfdf5", border: "#6ee7b7", ink: "#047857" },
   { bg: "#eff6ff", border: "#93c5fd", ink: "#1d4ed8" },
   { bg: "#fff7ed", border: "#fdba74", ink: "#c2410c" },
   { bg: "#fdf2f8", border: "#f9a8d4", ink: "#be185d" },
   { bg: "#f5f3ff", border: "#c4b5fd", ink: "#6d28d9" },
   { bg: "#fefce8", border: "#fde047", ink: "#a16207" },
-  { bg: "#ecfeff", border: "#67e8f9", ink: "#0e7490" },
   { bg: "#fef2f2", border: "#fca5a5", ink: "#b91c1c" },
-  { bg: "#f0fdf4", border: "#86efac", ink: "#15803d" },
   { bg: "#eef2ff", border: "#a5b4fc", ink: "#4338ca" },
+  { bg: "#f0f9ff", border: "#7dd3fc", ink: "#0369a1" },
+  { bg: "#fff1f2", border: "#fda4af", ink: "#be123c" },
+  { bg: "#faf5ff", border: "#d8b4fe", ink: "#7e22ce" },
+  { bg: "#fffbeb", border: "#fcd34d", ink: "#b45309" },
+  { bg: "#fdf4ff", border: "#f0abfc", ink: "#a21caf" },
+  { bg: "#ecfeff", border: "#67e8f9", ink: "#0e7490" },
+  { bg: "#ffedd5", border: "#fb923c", ink: "#9a3412" },
+  { bg: "#e0e7ff", border: "#818cf8", ink: "#3730a3" },
+  { bg: "#ffe4e6", border: "#fb7185", ink: "#9f1239" },
+  { bg: "#fef3c7", border: "#fbbf24", ink: "#92400e" },
+  { bg: "#fae8ff", border: "#e879f9", ink: "#86198f" },
+  { bg: "#dbeafe", border: "#60a5fa", ink: "#1e40af" },
+  { bg: "#ecfdf5", border: "#6ee7b7", ink: "#047857" },
 ];
 
-function categoryColor(name) {
-  const text = String(name || "");
-  let hash = 0;
-  for (let i = 0; i < text.length; i += 1) hash = (hash * 31 + text.charCodeAt(i)) >>> 0;
-  return CATEGORY_COLORS[hash % CATEGORY_COLORS.length];
-}
-
-function categoryStyle(name, selected) {
-  const color = categoryColor(name);
+function categoryStyle(name, selected, index = 0) {
+  const color = CATEGORY_COLORS[Math.abs(index) % CATEGORY_COLORS.length];
   return {
     background: color.bg,
     borderColor: selected ? color.ink : color.border,
@@ -234,7 +237,7 @@ function CategoryHoneycomb({ categories, categoryId, onPick, onAdd }) {
             key={item.row.id}
             type="button"
             className={`am-cat${categoryId === item.row.id ? " is-on" : ""}`}
-            style={{ ...style, ...categoryStyle(item.row.name, categoryId === item.row.id) }}
+            style={{ ...style, ...categoryStyle(item.row.name, categoryId === item.row.id, categories.findIndex((row) => row.id === item.row.id)) }}
             onClick={() => {
               if (moved.current > 8) return;
               onPick(item.row.id);
@@ -637,12 +640,12 @@ export default function ArrivedMaterial({ user }) {
           <button type="button" className="am-cat am-other" onClick={() => openAdd("category")}>
             + Other
           </button>
-          {sortedCategories.map((row) => (
+          {sortedCategories.map((row, index) => (
             <button
               key={row.id}
               type="button"
               className={`am-cat${categoryId === row.id ? " is-on" : ""}`}
-              style={categoryStyle(row.name, categoryId === row.id)}
+              style={categoryStyle(row.name, categoryId === row.id, index)}
               onClick={() => pickCategory(row.id)}
             >
               <span className="am-cat-name">{row.name}</span>

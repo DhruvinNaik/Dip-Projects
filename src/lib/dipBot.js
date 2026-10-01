@@ -2542,7 +2542,7 @@ async function answerWithGroq(question, user, scope, history) {
   const message = await groqChat([
     {
       role: "system",
-      content: "You are DIP Bot for a construction site portal. The user writes English, Hindi, or Gujarati in Roman script. aaje/aje means today, gai kale or kal means yesterday, athvadia means this week, ketla/ketli means how many. Answer any question about this user's sites from the JSON: daily report progress, planning, workers by gender, equipment, cement used or received, materials on the report, materials that arrived (arrivedMaterialTotals), concrete, visitors, cube tests, tasks, tickets, leave, team, weekly reports, and site visits. Match the date in siteDays or earlierDays. Quote the numbers that are present. If only one part is blank, still answer the rest. Do not invent numbers. Do not reply with a menu of topics. One or two sentences, or a short list if they ask to show records. Plain text in the user's language.",
+      content: "You are DIP Bot for a construction site portal. The user writes English, Hindi, or Gujarati in Roman script. aaje/aje means today, gai kale or kal means yesterday, athvadia means this week, ketla/ketli means how many. Answer any question about this user's sites from the JSON: daily report progress, planning, workers by gender, equipment, cement used or received, materials on the report, materials that arrived (arrivedMaterialTotals), concrete, visitors, cube tests, tasks, tickets, leave, team, weekly reports, and site visits. Match the date in siteDays or earlierDays. Quote the numbers that are present. If only one part is blank, still answer the rest. Do not invent numbers. Do not reply with a menu of topics. One or two sentences, or a short list if they ask to show records.`Plain text. Reply in ${detectReplyLanguage(question)} only.`",
     },
     ...prior,
     {
@@ -2553,37 +2553,371 @@ async function answerWithGroq(question, user, scope, history) {
   const text = String(message?.content || "").trim();
   if (!text) return null;
   const parsed = text.startsWith("{") ? readGroqAnswer(text, scope, question) : null;
-  return {
-    text: parsed?.text || text,
+  return { text: stripMarkdown(parsed?.text || text) };
+}
+
+// ---------- Generic data agent ----------
+const QUERY_TABLES = {
+  tasks: {
+    cols: ["id", "title", "assigned_to", "assigned_by", "status", "due_date", "site_name", "priority", "created_at"],
+    siteCol: "site_name", meCols: ["assigned_to", "assigned_by"],
+  },
+  recurring_task_instances: {
+    cols: ["id", "title", "assigned_to", "assigned_by", "status", "due_date", "site_name", "priority", "created_at"],
+    siteCol: "site_name", meCols: ["assigned_to", "assigned_by"],
+  },
+  leaves: {
+    cols: ["id", "name", "user_name", "leave_type", "from_date", "to_date", "status", "site_name", "admin_approved", "proxy_approved", "proxy_user_name", "level_approver_user_name", "head_approver_user_name", "created_at"],
+    siteCol: "site_name", meCols: ["user_name"],
+  },
+  tickets: {
+    cols: ["id", "task_title", "raised_by", "raised_by_name", "assigned_to", "assigned_to_name", "site_name", "query", "status", "created_at"],
+    siteCol: "site_name", meCols: ["raised_by", "assigned_to"],
+  },
+  user_details: {
+    cols: ["id", "name", "username", "role", "department", "site_name", "site_names", "status"],
+    siteCol: "site_name", meCols: ["username"],
+  },
+  site_details: {
+    cols: ["id", "site_name", "user_name", "role", "status", "client_name"],
+    siteCol: "site_name",
+  },
+  dpr_reports: {
+    cols: ["id", "site", "engineer", "report_type", "date", "created_at", "payload"],
+    siteCol: "site",
+  },
+  wpr_reports: {
+    cols: ["id", "site_name", "engineer_name", "report_date", "report_number", "created_at"],
+    siteCol: "site_name",
+  },
+  site_reports: {
+    cols: ["id", "site_name", "reporter_name", "designation", "visit_date", "progress_of_work", "quality_observations", "safety_concerns", "issues_concerns", "site_visit_instructions", "key_instructions", "created_at"],
+    siteCol: "site_name",
+  },
+  site_material_arrivals: {
+    cols: ["id", "site_name", "category_name", "subcategory_name", "type_name", "quantity", "unit", "recorded_by", "user_name", "created_at"],
+    siteCol: "site_name",
+  },
+  attendance: {
+    cols: ["user_name", "name", "date", "clock_in", "clock_out", "clock_in_status"],
+    meCols: ["user_name"],
+  },
+  expenses: { cols: "*" },
+  hr_documents: { cols: "*" },
+};
+
+const PORTALS = {
+  admin: {
+    label: "Admin portal (full company view)",
+    tables: Object.keys(QUERY_TABLES),
+    rules: `You can see everything: all employees, sites, tasks, leaves, tickets, attendance, reports, material, expenses and documents. Compare sites and people when asked.`,
+  },
+  hr: {
+    label: "HR portal (people operations only)",
+    tables: ["user_details", "leaves", "attendance", "expenses", "hr_documents"],
+    rules: `You only handle employees, attendance, leave, expenses and documents. If asked about tasks, tickets or site reports, say that is not available in the HR portal and suggest the Admin portal. Absent = no clock_in on a working day and not on approved leave.`,
+  },
+  site: {
+    label: "Site portal (only this user's assigned sites)",
+    tables: ["tasks", "recurring_task_instances", "leaves", "tickets", "user_details", "site_details", "dpr_reports", "wpr_reports", "site_reports", "site_material_arrivals"],
+    rules: `Everything is already limited to the user's assigned sites. If they ask about another site, say you can only open their own sites. dpr_reports = daily reports (evening is final). Select "payload" (max 8 rows, filter by date and site) for progress, planning, workers by gender, equipment, cement, material, visitors and cube tests. site_material_arrivals is material received; sum only the same unit together.`,
+  },
+  office: {
+    label: "Office portal (personal view, this user only)",
+    tables: ["tasks", "recurring_task_instances", "leaves", "tickets", "attendance", "user_details"],
+    rules: `Everything is already limited to this user's own tasks, leave, tickets and attendance. Say "you/your". If they ask about other people, say you can only show their own records. Leave balance questions are answered elsewhere, so use leaves only for lists and counts.`,
+  },
+};
+
+function portalFor(scope) {
+  return PORTALS[scope] || PORTALS.office; // unknown scope gets the most restricted portal
+}
+
+function detectReplyLanguage(text) {
+  const t = String(text || "");
+  if (/[\u0A80-\u0AFF]/.test(t)) return "Gujarati (Gujarati script)";
+  if (/[\u0900-\u097F]/.test(t)) return "Hindi (Devanagari script)";
+  const q = normalizeSiteQuestion(t);
+  const words = q.split(" ");
+  const roman = [
+    "aaje", "aje", "aaj", "kale", "kal", "ketla", "ketli", "ketlu", "batavo", "bataavo",
+    "kai", "kon", "che", "chhe", "mara", "mari", "mare", "mane", "athvadiye", "athvad",
+    "thayu", "avi", "aavi", "kem", "shu", "su", "hatu", "hata", "badha", "kitna", "kitne",
+    "kaun", "hai", "kya", "dikhao", "batao", "mera", "meri",
+  ];
+  const hits = words.filter((w) => roman.includes(w)).length;
+  if (hits >= 1 && hits / Math.max(words.length, 1) >= 0.15) return "the same Roman-script Gujarati/Hindi mix the user wrote";
+  return "English";
+}
+
+function agentSystemPrompt(user, scope, language = "English") {
+  const portal = portalFor(scope);
+  const sites = userSiteNames(user);
+  return `You are DIP Bot inside the ${portal.label} of a construction company portal. Today is ${ymd()} (${new Date().toLocaleDateString("en-IN", { weekday: "long" })}). Current user: ${user?.name || user?.user_name || "unknown"}, role ${user?.role || "n/a"}${sites.length ? `, sites: ${sites.join(", ")}` : ""}.
+The user writes English, Hindi or Gujarati in Roman script (aaje = today, kale/kal = yesterday, athvadiye = this week, ketla/ketli = how many, batavo = show).
+ALWAYS get facts by calling query_table. Never guess or invent numbers. Make several calls if needed and compare. Use aggregate for counts and sums. Dates are YYYY-MM-DD.
+
+Tables you may query:
+${portal.tables.map((t) => `- ${t}: ${QUERY_TABLES[t].cols === "*" ? "(any column)" : QUERY_TABLES[t].cols.join(", ")}`).join("\n")}
+
+Portal rules: ${portal.rules}
+
+General notes:
+- Task status: pending, in_progress, completed, not_applicable. Overdue = due_date before today and not completed/not_applicable. assigned_to / assigned_by hold usernames; look up names in user_details when needed.
+- Leave is approved only when admin_approved is true (or status approved) and not rejected. On leave on a date means from_date <= date <= to_date, inclusive.
+- tickets.status: open / solved / closed. attendance: clock_in null = absent, clock_in_status "late" = late.
+FORMAT RULE (strict): plain text only. Never use markdown, tables, pipes (|), asterisks, or headings. Do not list rows in your reply, because the app shows the records as a table automatically. Just write a short summary sentence such as "5 weekly reports for Trial." and mention anything notable.
+LANGUAGE RULE (strict): write the whole reply in ${language}. Do not switch language because the data contains Gujarati or Hindi names. Never mix in another language. Site names, material names and numbers stay exactly as stored.
+Keep replies short and direct: a sentence or two, or a short list when they ask to show records. If nothing matches, say so plainly. Do not offer menus of topics.`;
+}
+
+const QUERY_TOOL = {
+  type: "function",
+  function: {
+    name: "query_table",
+    description: "Read rows from a portal table. Use it for every question about data. Call it several times if needed. Returns rows, or grouped numbers when aggregate is set.",
+    parameters: {
+      type: "object",
+      properties: {
+        table: { type: "string" },
+        select: { type: "array", items: { type: "string" }, description: "Columns to return. Omit for all except payload." },
+        filters: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              column: { type: "string" },
+              op: { type: "string", enum: ["eq", "neq", "contains", "gt", "gte", "lt", "lte", "in", "is_null", "not_null"] },
+              value: {},
+            },
+            required: ["column", "op"],
+          },
+        },
+        order_by: { type: "string" },
+        ascending: { type: "boolean" },
+        limit: { type: "integer", description: "Max rows to return, up to 40." },
+        aggregate: {
+          type: "object",
+          description: "Compute numbers instead of returning rows.",
+          properties: {
+            fn: { type: "string", enum: ["count", "sum", "avg", "min", "max"] },
+            column: { type: "string", description: "Numeric column for sum/avg/min/max" },
+            group_by: { type: "string" },
+          },
+          required: ["fn"],
+        },
+      },
+      required: ["table"],
+    },
+  },
+};
+
+async function fetchAllRows(build, maxRows = 5000) {
+  const out = [];
+  for (let from = 0; from < maxRows; from += 1000) {
+    const { data, error } = await build().range(from, from + 999);
+    if (error) throw new Error(error.message);
+    out.push(...(data || []));
+    if (!data || data.length < 1000) break;
+  }
+  return out;
+}
+
+const inList = (col, list) =>
+  `${col}.in.(${list.map((v) => `"${String(v).replace(/["\\]/g, "")}"`).join(",")})`;
+
+async function runQueryTool(scope, user, rawArgs) {
+  const args = lookupArgs(rawArgs);
+  const portal = portalFor(scope);
+  const name = String(args.table || "");
+  const def = QUERY_TABLES[name];
+  if (!def || !portal.tables.includes(name)) {
+    return { error: `Table not available. Use one of: ${portal.tables.join(", ")}.` };
+  }
+  const okCol = (col) => (def.cols === "*" ? /^[a-z_][a-z0-9_]*$/i.test(col || "") : def.cols.includes(col));
+
+  const mine = userSiteNames(user);
+  const me = String(user?.user_name || user?.username || "").replace(/["\\,()]/g, "");
+  let teamUsernames = [];
+  if (scope === "site") {
+    if (!mine.length) return { error: "No site is assigned to this user." };
+    const siteCtx = await loadSiteContext(user);
+    teamUsernames = (siteCtx.users || []).map((p) => p.username).filter(Boolean);
+  }
+  if (scope === "office" && !me) return { error: "Unknown user." };
+
+  const filters = Array.isArray(args.filters) ? args.filters : [];
+  for (const f of filters) if (!okCol(f.column)) return { error: `Unknown column ${f.column}. Columns: ${def.cols === "*" ? "any" : def.cols.join(", ")}.` };
+  if (args.order_by && !okCol(args.order_by)) return { error: `Unknown order_by ${args.order_by}.` };
+  const agg = args.aggregate && args.aggregate.fn ? args.aggregate : null;
+  if (agg?.column && !okCol(agg.column)) return { error: `Unknown aggregate column ${agg.column}.` };
+  if (agg?.group_by && !okCol(agg.group_by)) return { error: `Unknown group_by ${agg.group_by}.` };
+
+  let select = Array.isArray(args.select) && args.select.length
+    ? args.select.filter(okCol)
+    : def.cols === "*" ? ["*"] : def.cols.filter((c) => c !== "payload");
+  if (agg) select = [...new Set([agg.column, agg.group_by].filter(Boolean))];
+  if (!select.length) select = def.cols === "*" ? ["*"] : [def.cols[0]];
+  if (name === "user_details" && scope === "site") select = [...new Set([...select, "site_name", "site_names"])];
+  const wantsPayload = select.includes("payload");
+
+  const build = () => {
+    let q = supabase.from(name).select(select.join(","));
+
+    // ---- scope locks, enforced in code ----
+    if (scope === "site") {
+      if (name === "leaves") {
+        q = teamUsernames.length
+          ? q.or(`${inList("site_name", mine)},${inList("user_name", teamUsernames)}`)
+          : q.in("site_name", mine);
+      } else if (def.siteCol && name !== "user_details") {
+        q = q.in(def.siteCol, mine);
+      }
+    }
+    if (scope === "office") {
+      if (name === "user_details") q = q.eq("username", me);
+      else if (name === "tickets") q = q.or(["raised_by", "assigned_to", "raised_by_name", "assigned_to_name"].map((c) => `${c}.eq."${me}"`).join(","));
+      else if (name === "tasks" || name === "recurring_task_instances") q = q.or(`assigned_to.eq."${me}",assigned_by.eq."${me}"`);
+      else if (def.meCols) q = q.or(def.meCols.map((c) => `${c}.eq."${me}"`).join(","));
+    }
+
+    filters.forEach((f) => {
+      const v = f.value;
+      if (f.op === "eq") q = q.eq(f.column, v);
+      else if (f.op === "neq") q = q.neq(f.column, v);
+      else if (f.op === "contains") q = q.ilike(f.column, `%${String(v).replace(/[%,]/g, "")}%`);
+      else if (f.op === "gt") q = q.gt(f.column, v);
+      else if (f.op === "gte") q = q.gte(f.column, v);
+      else if (f.op === "lt") q = q.lt(f.column, v);
+      else if (f.op === "lte") q = q.lte(f.column, v);
+      else if (f.op === "in") q = q.in(f.column, Array.isArray(v) ? v : [v]);
+      else if (f.op === "is_null") q = q.is(f.column, null);
+      else if (f.op === "not_null") q = q.not(f.column, "is", null);
+    });
+    const orderCol = args.order_by || (def.cols === "*" || def.cols.includes("created_at") ? "created_at" : null);
+    if (orderCol) q = q.order(orderCol, { ascending: args.ascending === true });
+    return q;
   };
+
+  let rows = await fetchAllRows(build, wantsPayload ? 200 : 5000);
+  if (name === "user_details" && scope === "site") rows = rows.filter((p) => personOnSites(p, mine));
+
+  if (agg) {
+    const groups = new Map();
+    rows.forEach((row) => {
+      const key = agg.group_by ? String(row[agg.group_by] ?? "Unknown") : "all";
+      const g = groups.get(key) || { count: 0, sum: 0, min: null, max: null };
+      const n = Number(row[agg.column]);
+      g.count += 1;
+      if (Number.isFinite(n)) {
+        g.sum += n;
+        g.min = g.min == null ? n : Math.min(g.min, n);
+        g.max = g.max == null ? n : Math.max(g.max, n);
+      }
+      groups.set(key, g);
+    });
+    const result = [...groups.entries()].slice(0, 60).map(([group, g]) => {
+      const value = agg.fn === "count" ? g.count : agg.fn === "sum" ? g.sum : agg.fn === "avg" ? (g.count ? g.sum / g.count : 0) : agg.fn === "min" ? g.min : g.max;
+      return agg.group_by ? { [agg.group_by]: group, [agg.fn]: value, rows: g.count } : { [agg.fn]: value, rows: g.count };
+    });
+    return { table: name, totalRows: rows.length, aggregate: result };
+  }
+
+  const limit = Math.min(Number(args.limit) || 25, wantsPayload ? 8 : 40);
+  const shown = rows.slice(0, limit).map((row) => (name === "dpr_reports" && wantsPayload ? daySnapshot(row) : row));
+  return { table: name, totalRows: rows.length, showing: shown.length, rows: shown };
+}
+
+function stripMarkdown(text) {
+  return String(text || "")
+    .split("\n")
+    .filter((line) => !/^\s*\|?[\s:|-]+\|[\s:|-]*$/.test(line)) // table separator rows
+    .filter((line) => !/^\s*\|.*\|\s*$/.test(line))             // table rows
+    .join("\n")
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+async function answerWithAgent(question, user, scope, history) {
+  const prior = (history || [])
+    .slice(-6)
+    .filter((turn) => turn?.content)
+    .map((turn) => ({ role: turn.role === "assistant" ? "assistant" : "user", content: String(turn.content) }));
+const language = detectReplyLanguage(question);
+const messages = [
+  { role: "system", content: agentSystemPrompt(user, scope, language) },
+  ...prior,
+  { role: "user", content: question },
+];
+  let lastRows = null;
+  for (let step = 0; step < 6; step += 1) {
+    const message = await groqChat(messages, [QUERY_TOOL]);
+    if (!message) return null;
+    const calls = message.tool_calls || [];
+    if (!calls.length) {
+      const text = stripMarkdown(message.content);
+      if (!text) return null;
+      const out = { text, chips: chipsFor(scope) };
+      const asksCount = asksForSummary(normalizeSiteQuestion(question));
+      if (!asksCount && lastRows?.length >= 1 && lastRows.length <= 40) {
+        const hidden = new Set(["id", "payload"]);
+        out.columns = Object.keys(lastRows[0]).filter((c) => !hidden.has(c)).slice(0, 7);
+        out.rows = lastRows.map((row) => {
+          const next = {};
+          out.columns.forEach((c) => {
+            next[c] = row[c] == null || typeof row[c] === "object" ? "" : String(row[c]);
+          });
+          return next;
+        });
+      }
+      return out;
+    }
+    messages.push({ role: "assistant", content: message.content || "", tool_calls: calls });
+    for (const call of calls) {
+      let result;
+      try {
+        result = await runQueryTool(scope, user, call.function?.arguments);
+        if (result.aggregate) lastRows = null;
+        else if (result.rows && result.table !== "dpr_reports") lastRows = result.rows;
+      } catch (error) {
+        result = { error: error.message || "Query failed" };
+      }
+      messages.push({ role: "tool", tool_call_id: call.id, content: JSON.stringify(result).slice(0, 14000) });
+    }
+  }
+  return null;
 }
 
 async function resolveDipQuery(rawText, user, options = {}) {
-  const scope = norm(options.scope) || "admin";
+  const scope = ["admin", "hr", "site", "office"].includes(norm(options.scope)) ? norm(options.scope) : "office";
   const text = String(rawText || "").trim();
   const q = norm(text);
+
   if (q && asksOwnLeaveBalance(q) && (scope === "site" || scope === "office")) {
     return ownLeaveBalanceAnswer(user, chipsFor(scope));
   }
-  if (scope === "site") {
-    return answerSiteDipQuery(rawText, user);
-  }
-  if (text) {
+
+  // greetings and empty input stay local and instant
+  const greeting = /^(hi|hello|hey|yo|hola)\b/.test(q) || /\b(help|what can you|capabilities)\b/.test(q);
+  if (text && !greeting) {
     try {
-      const groqAnswer = await answerWithGroq(text, user, scope, options.history);
-      if (groqAnswer?.text) return groqAnswer;
+      const answer = await answerWithAgent(text, user, scope, options.history);
+      if (answer?.text) return answer;
     } catch {
-      /* fall back to the keyword answers */
+      /* fall through to keyword answers */
     }
   }
-  if (scope === "hr") {
-    return answerHrDipQuery(rawText, user);
-  }
-  if (scope === "office") {
-    return answerOfficeDipQuery(rawText, user);
-  }
+
+  if (scope === "site") return answerSiteDipQuery(rawText, user);
+  if (scope === "hr") return answerHrDipQuery(rawText, user);
+  if (scope === "office") return answerOfficeDipQuery(rawText, user);
 
   if (!q) return helpText(user?.name);
+  // ...the rest of the admin keyword logic stays exactly as it is
 
   const ctx = await loadContext();
   if (ctx.errors.length && !ctx.users.length && !ctx.allTasks.length) {

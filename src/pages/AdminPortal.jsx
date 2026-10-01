@@ -5061,7 +5061,7 @@ function LeaveRow({ leave, onAction, updating, roleByName, userMap, onRowClick }
   );
 }
 
-function RescheduleRow({ req, onAction, updating, userMap }) {
+function RescheduleRow({ req, onAction, onDirectReschedule, updating, userMap, allTasks = [] }) {
   const ss = RESCHED_STATUS_STYLES[req.status] || RESCHED_STATUS_STYLES.pending;
   const fmtDate = (d) =>
     d
@@ -5071,8 +5071,9 @@ function RescheduleRow({ req, onAction, updating, userMap }) {
           year: "numeric",
         })
       : "—";
-  const taskTitle = req.tasks?.title || `Task #${req.task_id}`;
-  const siteName = req.tasks?.site_name;
+  const task = allTasks.find((row) => row.id === req.task_id) || (req.tasks ? { id: req.task_id, ...req.tasks } : null);
+  const taskTitle = task?.title || req.tasks?.title || `Task #${req.task_id}`;
+  const siteName = task?.site_name || req.tasks?.site_name;
 
   return (
     <tr className="ap-tr">
@@ -5091,6 +5092,7 @@ function RescheduleRow({ req, onAction, updating, userMap }) {
       <td className="ap-td" style={{ color: "#7c3aed", fontWeight: 600 }}>
         {fmtDate(req.requested_date)}
       </td>
+      <td className="ap-td">+{Number(req.requested_hours) || 0} hrs</td>
       <td className="ap-td" style={{ maxWidth: 220 }}>
         {req.reason ? (
           <span style={{ fontSize: 12.5, color: "#64748b" }}>
@@ -5098,6 +5100,11 @@ function RescheduleRow({ req, onAction, updating, userMap }) {
           </span>
         ) : (
           <span style={{ color: "#94a3b8" }}>—</span>
+        )}
+        {req.admin_note && (
+          <div style={{ fontSize: 11.5, color: "#2563eb", marginTop: 4 }}>
+            Admin update: {formatAuditEntries(req.admin_note)}
+          </div>
         )}
       </td>
       <td className="ap-td">
@@ -5127,12 +5134,17 @@ function RescheduleRow({ req, onAction, updating, userMap }) {
             >
               Reject
             </button>
+            <button
+              className="ap-btn-reschedule"
+              disabled={!task}
+              onClick={() => onDirectReschedule(task, req)}
+            >
+              Reschedule Task
+            </button>
             {updating === req.id && <span className="ap-saving">saving…</span>}
           </div>
         ) : (
-          <span
-            style={{ fontSize: 11.5, color: "#94a3b8", fontStyle: "italic" }}
-          >
+          <span style={{ fontSize: 11.5, color: "#94a3b8", fontStyle: "italic" }}>
             {req.status === "approved"
               ? `Approved by ${nameFor(userMap, req.actioned_by)}`
               : `Rejected by ${nameFor(userMap, req.actioned_by)}`}
@@ -5146,9 +5158,11 @@ function RescheduleRow({ req, onAction, updating, userMap }) {
 function RescheduleRequestCard({
   req,
   onAction,
+  onDirectReschedule,
   updating,
   roleByName,
   userMap,
+  allTasks = [],
 }) {
   const ss = RESCHED_STATUS_STYLES[req.status] || RESCHED_STATUS_STYLES.pending;
   const fmtDate = (d) =>
@@ -5159,8 +5173,9 @@ function RescheduleRequestCard({
           year: "numeric",
         })
       : "—";
-  const taskTitle = req.tasks?.title || `Task #${req.task_id}`;
-  const siteName = req.tasks?.site_name;
+  const task = allTasks.find((row) => row.id === req.task_id) || (req.tasks ? { id: req.task_id, ...req.tasks } : null);
+  const taskTitle = task?.title || req.tasks?.title || `Task #${req.task_id}`;
+  const siteName = task?.site_name || req.tasks?.site_name;
 
   return (
     <div
@@ -5233,6 +5248,7 @@ function RescheduleRequestCard({
           </svg>
           Requested: {fmtDate(req.requested_date)}
         </span>
+        <span>Additional time: +{Number(req.requested_hours) || 0} hrs</span>
         <span>
           {new Date(req.created_at).toLocaleDateString("en-IN", {
             day: "numeric",
@@ -5248,7 +5264,7 @@ function RescheduleRequestCard({
         </p>
       )}
       {req.admin_note && (
-        <div className="ap-leave-rejection">
+        <div className={req.status === "rejected" ? "ap-leave-rejection" : "ap-leave-reason"}>
           {formatAuditEntries(req.admin_note, roleByName)}
         </div>
       )}
@@ -5260,7 +5276,7 @@ function RescheduleRequestCard({
             disabled={updating === req.id}
             onClick={() => onAction(req, true)}
           >
-            Approve & Update Due Date
+            Approve & Add Hours
           </button>
           <button
             className="ap-btn-reject"
@@ -5269,12 +5285,19 @@ function RescheduleRequestCard({
           >
             Reject
           </button>
+          <button
+            className="ap-btn-reschedule"
+            disabled={!task}
+            onClick={() => onDirectReschedule(task, req)}
+          >
+            Reschedule Task
+          </button>
           {updating === req.id && <span className="ap-saving">saving…</span>}
         </div>
       ) : (
         <div className="ap-leave-done">
           {req.status === "approved"
-            ? `✓ Approved by ${nameFor(userMap, req.actioned_by)} — due date updated to ${fmtDate(req.requested_date)}`
+            ? `✓ Approved by ${nameFor(userMap, req.actioned_by)} — due date updated to ${fmtDate(req.requested_date)}, +${Number(req.requested_hours) || 0} task hours added`
             : `✗ Rejected by ${nameFor(userMap, req.actioned_by)}`}
         </div>
       )}
@@ -5914,7 +5937,7 @@ const [hoveredNavKey, setHoveredNavKey] = useState(null);
 
   const [editingTaskId, setEditingTaskId] = useState(null);
   const [reassignModal, setReassignModal] = useState(null); // { task, newAssignee }
-  const [rescheduleTaskModal, setRescheduleTaskModal] = useState(null); // { task, newDate }
+  const [rescheduleTaskModal, setRescheduleTaskModal] = useState(null); // { task, newDate, newHours }
   const [updatingReassignId, setUpdatingReassignId] = useState(null);
 
   const [updatingRescheduleTaskId, setUpdatingRescheduleTaskId] =
@@ -6342,8 +6365,7 @@ const [delayReportMeta, setDelayReportMeta] = useState(null);
     setLoadingReschedules(true);
     const { data } = await supabase
       .from("reschedule_requests")
-      .select("*, tasks(title, site_name)")
-      .is("verify_with", null) // ← only requests with no specific verifier
+      .select("*, tasks(title, site_name, due_date, hours_to_complete)")
       .order("created_at", { ascending: false });
     setAllReschedules(data || []);
     setLoadingReschedules(false);
@@ -7525,20 +7547,65 @@ const handleReassignSubmit = async () => {
   setReassignModal(null);
 };
 
-  const openRescheduleTaskModal = (task) => {
-    setRescheduleTaskModal({ task, newDate: task.due_date || "" });
+  const openRescheduleTaskModal = (task, request = null) => {
+    setRescheduleTaskModal({
+      task,
+      requestId: request?.id || null,
+      newDate: task.due_date || "",
+      newHours: task.hours_to_complete == null ? "" : String(task.hours_to_complete),
+    });
   };
 
 const handleRescheduleTaskSubmit = async () => {
-  if (!rescheduleTaskModal?.newDate) return showToast("error", "Please pick a new due date.");
-  const { task, newDate } = rescheduleTaskModal;
+  if (!rescheduleTaskModal) return;
+  const { task, requestId, newDate, newHours } = rescheduleTaskModal;
+  const currentDate = task.due_date || "";
+  const currentHours = task.hours_to_complete == null ? "" : String(task.hours_to_complete);
+  const dateChanged = newDate !== currentDate;
+  const hoursChanged = newHours !== currentHours;
+  if (!dateChanged && !hoursChanged) return showToast("error", "Change the due date or task hours first.");
+  if (newHours !== "" && (!Number.isFinite(Number(newHours)) || Number(newHours) < 0)) {
+    return showToast("error", "Enter a valid task-hour allocation.");
+  }
   const table = task._source === "instance" ? "recurring_task_instances" : "tasks";
   setUpdatingRescheduleTaskId(task.id);
-  const { error } = await supabase.from(table).update({ due_date: newDate }).eq("id", task.id);
+  const updates = {
+    status: "pending",
+    accepted_at: null,
+    resumed_at: null,
+    is_held: false,
+    hold_started_at: null,
+    accumulated_seconds: 0,
+  };
+  if (dateChanged) updates.due_date = newDate || null;
+  if (hoursChanged) updates.hours_to_complete = newHours === "" ? null : Number(newHours);
+  const { error } = await supabase.from(table).update(updates).eq("id", task.id);
   setUpdatingRescheduleTaskId(null);
   if (error) return showToast("error", "Failed to reschedule: " + error.message);
-  setAllTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, due_date: newDate } : t)));
-  showToast("success", `Due date updated to ${new Date(newDate).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}.`);
+  setAllTasks((prev) => prev.map((t) => (t.id === task.id ? { ...t, ...updates } : t)));
+  const changed = [
+    dateChanged ? `due date to ${newDate ? new Date(newDate + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "not set"}` : "",
+    hoursChanged ? `task hours to ${newHours || "0"}` : "",
+  ].filter(Boolean).join(" and ");
+  if (requestId) {
+    const requestUpdate = {
+      status: "approved",
+      actioned_by: user?.user_name || "admin",
+      actioned_at: new Date().toISOString(),
+      admin_note: `Admin rescheduled directly: ${changed}.`,
+    };
+    const { error: requestError } = await supabase
+      .from("reschedule_requests")
+      .update(requestUpdate)
+      .eq("id", requestId);
+    if (requestError) {
+      return showToast("error", `Task updated, but request status failed: ${requestError.message}`);
+    }
+    setAllReschedules((prev) =>
+      prev.map((request) => request.id === requestId ? { ...request, ...requestUpdate } : request),
+    );
+  }
+  showToast("success", `Task updated: ${changed}.`);
   setRescheduleTaskModal(null);
 };
   
@@ -7591,10 +7658,6 @@ const handleDeleteTemplate = async (id) => {
       .update(payload)
       .eq("id", req.id);
     if (!error) {
-      await supabase
-        .from("tasks")
-        .update({ due_date: req.requested_date })
-        .eq("id", req.task_id);
       fetchAllTasks();
     }
     setUpdatingRescheduleId(null);
@@ -7605,7 +7668,7 @@ const handleDeleteTemplate = async (id) => {
     setAllReschedules((prev) =>
       prev.map((r) => (r.id === req.id ? { ...r, ...payload } : r)),
     );
-    showToast("success", "Reschedule approved — task due date updated.");
+    showToast("success", "Reschedule approved — due date and task hours updated.");
   };
 
   // Add this new function for confirming the rejection:
@@ -10329,6 +10392,7 @@ const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filt
                       "Task",
                       "Current Due",
                       "Requested Date",
+                      "Additional Hours",
                       "Reason",
                       "Status",
                       "",
@@ -10346,8 +10410,10 @@ const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filt
                       key={req.id}
                       req={req}
                       onAction={handleRescheduleAction}
+                      onDirectReschedule={openRescheduleTaskModal}
                       updating={updatingRescheduleId}
                       userMap={userMap}
+                      allTasks={allTasks}
                     />
                   ))}
                 </tbody>
@@ -10360,9 +10426,11 @@ const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filt
                   key={req.id}
                   req={req}
                   onAction={handleRescheduleAction}
+                  onDirectReschedule={openRescheduleTaskModal}
                   updating={updatingRescheduleId}
                   roleByName={roleByName}
                   userMap={userMap}
+                  allTasks={allTasks}
                 />
               ))}
             </div>
@@ -11573,7 +11641,7 @@ case "mis-report":
                               })
                             }
                           >
-                            Reschedule
+                            Save Changes
                           </button>
                         </td>
                       </tr>
@@ -14302,10 +14370,8 @@ case "all-drawings":
                 gap: 6,
               }}
             >
-              <label
-                style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}
-              >
-                New Due Date <span style={{ color: "#dc2626" }}>*</span>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}>
+                New Due Date
               </label>
               <input
                 type="date"
@@ -14330,7 +14396,7 @@ case "all-drawings":
                 }
               />
               <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
-                Current due date:{" "}
+                Current due date (leave unchanged to keep it):{" "}
                 {new Date(
                   overdueRescheduleModal.task.due_date,
                 ).toLocaleDateString("en-IN", {
@@ -14597,6 +14663,20 @@ case "all-drawings":
                       year: "numeric",
                     })
                   : "Not set"}
+              </span>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: "#475569", marginTop: 8 }}>
+                Allocated Task Hours
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                className="ap-input"
+                value={rescheduleTaskModal.newHours}
+                onChange={(e) => setRescheduleTaskModal((p) => ({ ...p, newHours: e.target.value }))}
+              />
+              <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
+                Current allocation: {rescheduleTaskModal.task.hours_to_complete ?? "Not set"} hrs. Leave unchanged to keep it.
               </span>
             </div>
             <div

@@ -43,6 +43,7 @@ function same(left, right) {
   return String(left || "").trim().toLowerCase() === String(right || "").trim().toLowerCase();
 }
 
+
 const CATEGORY_COLORS = [
   { bg: "#eff6ff", border: "#93c5fd", ink: "#1d4ed8" },
   { bg: "#fff7ed", border: "#fdba74", ink: "#c2410c" },
@@ -250,6 +251,7 @@ function CategoryHoneycomb({ categories, categoryId, onPick, onAdd }) {
     </div>
   );
 }
+
 
 export default function ArrivedMaterial({ user }) {
   const sites = useMemo(() => assignedSites(user), [user]);

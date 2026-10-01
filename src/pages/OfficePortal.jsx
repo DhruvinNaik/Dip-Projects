@@ -292,6 +292,7 @@ function getViewUrl(url) {
   }
   return url; // pdf, images, etc. — browser can render natively
 }
+
 // ── Filter Bar ─────────────────────────────────────────────────────────────
 function TaskFilterBar({
   filters,
@@ -1206,6 +1207,7 @@ function TaskActionMenu({
             return (
               <button
                   key={item.key}
+                  className={`tt-action-item${item.disabled ? " is-disabled" : ""}${hovered ? " is-hovered" : ""}`}
                   disabled={item.disabled}
                   title={item.disabled ? item.disabledReason : undefined}   // ← add
                   onMouseEnter={() => setHoveredKey(item.key)}
@@ -1224,15 +1226,14 @@ function TaskActionMenu({
                   padding: "9px 14px",
                   fontSize: 13,
                   fontWeight: 600,
-                  background: hovered ? item.bg : "transparent",
+                  "--action-color": item.color,
+                  "--action-bg": item.bg || "transparent",
                   border: "none",
                   cursor: item.disabled ? "not-allowed" : "pointer",
-                  color: item.disabled ? "#94a3b8" : hovered ? item.color : "#334155", // ← darker disabled text (was #cbd5e1)
-                  opacity: item.disabled ? 1 : 1,
                   transition: "background .12s, color .12s",
                 }}
               >
-                <span style={{ display: "flex", flexShrink: 0, color: item.disabled ? "#94a3b8" : item.color }}>
+                <span className="tt-action-icon" style={{ display: "flex", flexShrink: 0, color: item.disabled ? "#a8b5bf" : item.color }}>
                   {item.icon}
                 </span>
                 {item.label}
@@ -1279,7 +1280,33 @@ function TaskTable({
   activityMaps,     
   onRejectTask,
 }) {
+  const [clockNow, setClockNow] = useState(Date.now());
   const nameFor = (username) => userMap[username] || username || "—";
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const remainingTime = (task) => {
+    const plannedHours = Number(task.hours_to_complete);
+    if (!Number.isFinite(plannedHours) || plannedHours <= 0) return null;
+
+    let elapsedSeconds = Number(task.accumulated_seconds) || 0;
+    if (task.accepted_at && !task.is_held && !["completed", "not_applicable"].includes(task.status)) {
+      const lastStarted = new Date(task.resumed_at || task.accepted_at).getTime();
+      if (Number.isFinite(lastStarted)) {
+        elapsedSeconds += Math.max(0, Math.floor((clockNow - lastStarted) / 1000));
+      }
+    }
+
+    const remainingMinutes = Math.ceil(Math.max(0, plannedHours * 3600 - elapsedSeconds) / 60);
+    const hours = Math.floor(remainingMinutes / 60);
+    const minutes = remainingMinutes % 60;
+    return {
+      text: `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`,
+      expired: remainingMinutes === 0,
+    };
+  };
 
   return (
     <div className="tt-wrap">
@@ -1313,7 +1340,18 @@ function TaskTable({
                 {showAssignedBy && <td>{nameFor(task.assigned_to)}</td>}
                 <td>{task.site_name || "—"}</td>
                 {showAssignedBy && <td>{nameFor(task.assigned_by)}</td>}
-                {!recurringMode && ( <td>{task.hours_to_complete ? `${task.hours_to_complete} hrs` : "—"}</td>)}
+                {!recurringMode && (
+                  <td>
+                    {(() => {
+                      const remaining = remainingTime(task);
+                      return remaining ? (
+                        <span className={`op-task-countdown${remaining.expired ? " is-expired" : ""}`} title="Remaining task time">
+                          {remaining.text}
+                        </span>
+                      ) : "—";
+                    })()}
+                  </td>
+                )}
                   <td>
                     {task.due_date
                       ? new Date(task.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
@@ -2126,7 +2164,7 @@ function RaisedTicketsTable({ tickets, onRowClick }) {
   );
 }
 
-function VerifyRequestsTable({ requests, onApprove, onReject, updatingId, userMap = {} }) {
+function VerifyRequestsTable({ requests, onApprove, onReject, updatingId, userMap = {}, allTasks = [] }) {
   const fmt = (d) =>
     d
       ? new Date(d + "T00:00:00").toLocaleDateString("en-IN", {
@@ -2151,6 +2189,7 @@ function VerifyRequestsTable({ requests, onApprove, onReject, updatingId, userMa
             <th>Site</th>
             <th>Current Due</th>
             <th>Requested Date</th>
+            <th>Additional Hours</th>
             <th>Reason</th>
             <th>Status</th>
             <th>Action</th>
@@ -2160,19 +2199,21 @@ function VerifyRequestsTable({ requests, onApprove, onReject, updatingId, userMa
           {requests.map((req) => {
             const sc = statusStyle[req.status] || statusStyle.pending;
             const isPending = req.status === "pending";
+            const task = allTasks.find((row) => row.id === req.task_id);
             return (
               <tr key={req.id} className="tt-row">
                 <td className="tt-title-cell">
                   <div className="tt-title">
-                    {req.tasks?.title || `Task #${req.task_id}`}
+                    {task?.title || req.tasks?.title || `Task #${req.task_id}`}
                   </div>
                 </td>
                   <td>{userMap[req.requested_by] || req.requested_by}</td>
-                <td>{req.tasks?.site_name || "—"}</td>
+                <td>{task?.site_name || req.tasks?.site_name || "—"}</td>
                 <td>{fmt(req.current_due)}</td>
                 <td style={{ color: "#7c3aed", fontWeight: 600 }}>
                   {fmt(req.requested_date)}
                 </td>
+                <td>+{Number(req.requested_hours) || 0} hrs</td>
                 <td style={{ maxWidth: 200 }}>
                   {req.reason ? (
                     <span style={{ fontSize: 12.5, color: "#64748b" }}>
@@ -2389,6 +2430,7 @@ function MyRescheduleTable({
             <th>Site</th>
             <th>Current Due</th>
             <th>Requested Date</th>
+            <th>Additional Hours</th>
             <th>Reason</th>
             <th>Status</th>
             <th>Actioned By</th>
@@ -2403,14 +2445,15 @@ function MyRescheduleTable({
               <tr key={req.id} className="tt-row">
                 <td className="tt-title-cell">
                   <div className="tt-title">
-                    {req.tasks?.title || `Task #${req.task_id}`}
+                    {task?.title || req.tasks?.title || `Task #${req.task_id}`}
                   </div>
                 </td>
-                <td>{req.tasks?.site_name || "—"}</td>
+                <td>{task?.site_name || req.tasks?.site_name || "—"}</td>
                 <td>{fmt(req.current_due)}</td>
                 <td style={{ color: "#7c3aed", fontWeight: 600 }}>
                   {fmt(req.requested_date)}
                 </td>
+                <td>+{Number(req.requested_hours) || 0} hrs</td>
                 <td style={{ maxWidth: 200 }}>
                   {req.reason ? (
                     <span style={{ fontSize: 12.5, color: "#64748b" }}>
@@ -2766,8 +2809,8 @@ function NavButton({ itemKey, icon, label, isActive, isHovered, onEnter, onLeave
   const [rescheduleTask, setRescheduleTask] = useState(null); // task object or null
   const [rescheduleForm, setRescheduleForm] = useState({
     requested_date: "",
+    requested_hours: "",
     reason: "",
-    verify_with: "", // ← add this
   });
   const [rescheduleSub, setRescheduleSub] = useState(false);
   const [myReschedules, setMyReschedules] = useState([]);
@@ -2793,7 +2836,13 @@ const [ticketDetail, setTicketDetail] = useState(null);
     typeof window === "undefined" ? true : window.innerWidth > 760,
   );
   const [activeTab, setActiveTab] = useState("my-tasks");
+  const [isDark, setIsDark] = useState(() => localStorage.getItem("theme") === "dark");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  useEffect(() => {
+    const theme = isDark ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [isDark]);
   // Tasks
   const [myTasks, setMyTasks] = useState([]);
   const [recurringTasks, setRecurringTasks] = useState([]);
@@ -2891,7 +2940,7 @@ const fetchMyVerifications = useCallback(async (u) => {
     const { data, error } = await supabase
       .from("reschedule_requests")
       .select(
-        "id, task_id, status, reason, requested_date, current_due, admin_note, actioned_by, actioned_at, created_at, requested_by, verify_with, tasks(title, site_name, due_date)",
+        "id, task_id, status, reason, requested_date, requested_hours, current_due, admin_note, actioned_by, actioned_at, created_at, requested_by, verify_with, tasks(title, site_name, due_date, hours_to_complete)",
       )
       .eq("verify_with", u.user_name)
       .order("created_at", { ascending: false });
@@ -3243,7 +3292,7 @@ useEffect(() => {
     const { data, error } = await supabase
       .from("reschedule_requests")
       .select(
-        "id, task_id, status, reason, requested_date, current_due, admin_note, actioned_by, actioned_at, created_at, employee_read, tasks(title, site_name, due_date)",
+        "id, task_id, status, reason, requested_date, requested_hours, current_due, admin_note, actioned_by, actioned_at, created_at, employee_read, tasks(title, site_name, due_date, hours_to_complete)",
       )
       .eq("requested_by", u.user_name)
       .order("created_at", { ascending: false });
@@ -3442,17 +3491,14 @@ const handleVerifySubmit = async () => {
       .update(payload)
       .eq("id", req.id);
     if (!error) {
-      await supabase
-        .from("tasks")
-        .update({ due_date: req.requested_date })
-        .eq("id", req.task_id);
+      fetchTasks(user);
     }
     setUpdatingVerifyId(null);
     if (error) return showToast("error", "Failed to update: " + error.message);
     setVerifyRequests((prev) =>
       prev.map((r) => (r.id === req.id ? { ...r, ...payload } : r)),
     );
-    showToast("success", "Reschedule approved — task due date updated.");
+    showToast("success", "Reschedule approved — due date and task hours updated.");
   };
 
   const handleVerifyRejectConfirm = async () => {
@@ -3945,12 +3991,16 @@ const handleStatusChange = async (taskId, newStatus, e) => {
       return showToast("error", "Please provide a reason.");
     if (
       rescheduleTask.due_date &&
-      rescheduleForm.requested_date <= rescheduleTask.due_date
+      rescheduleForm.requested_date < rescheduleTask.due_date
     )
       return showToast(
         "error",
-        "Requested date must be after the current due date.",
+        "Requested date cannot be before the current due date.",
       );
+    const hoursText = String(rescheduleForm.requested_hours || "").trim();
+    const requestedHours = hoursText ? Number(hoursText) : 0;
+    if (!Number.isFinite(requestedHours) || requestedHours < 0)
+      return showToast("error", "Enter a valid non-negative number of additional hours.");
 
     setRescheduleSub(true);
     const { error } = await supabase.from("reschedule_requests").insert([
@@ -3960,9 +4010,10 @@ const handleStatusChange = async (taskId, newStatus, e) => {
         assigned_by: rescheduleTask.assigned_by,
         current_due: rescheduleTask.due_date || null,
         requested_date: rescheduleForm.requested_date,
+        requested_hours: requestedHours,
         reason: rescheduleForm.reason.trim(),
         status: "pending",
-        verify_with: rescheduleForm.verify_with || null, // ← add this
+        verify_with: rescheduleTask.assigned_by || null,
       },
     ]);
     setRescheduleSub(false);
@@ -3972,7 +4023,7 @@ const handleStatusChange = async (taskId, newStatus, e) => {
     } else {
       showToast("success", "Reschedule request submitted!");
       setRescheduleTask(null);
-      setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+      setRescheduleForm({ requested_date: "", requested_hours: "", reason: "" });
     }
   };
   const unreadLeavesCount = myLeaves.filter(
@@ -4284,7 +4335,7 @@ const myTaskActivityMaps = useMemo(
       onRejectTask={(task) => setRejectTaskModal({ task, reason: "" })} 
       onReschedule={(task) => {
         setRescheduleTask(task);
-        setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+        setRescheduleForm({ requested_date: "", requested_hours: "", reason: "" });
       }}
       onDetailClick={(task) => setDetailTask(task)}
       
@@ -4315,7 +4366,7 @@ case "recurring-tasks":
       onNotApplicable={handleMarkNotApplicable}
       onReschedule={(task) => {
         setRescheduleTask(task);
-        setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+        setRescheduleForm({ requested_date: "", requested_hours: "", reason: "" });
       }}
       onDetailClick={(task) => setDetailTask(task)}
     />
@@ -4343,7 +4394,7 @@ case "all-tasks":
           onContinue={handleContinueTask}
           onReschedule={(task) => {
             setRescheduleTask(task);
-            setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+            setRescheduleForm({ requested_date: "", requested_hours: "", reason: "" });
           }}
         />
       )}
@@ -4747,7 +4798,7 @@ case "all-tasks":
       showAction={true}
       onReschedule={(task) => {
         setRescheduleTask(task);
-        setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+        setRescheduleForm({ requested_date: "", requested_hours: "", reason: "" });
       }}
       onSendVerification={handleSendVerification}
       onRaiseTicket={handleRaiseTicket}
@@ -4789,10 +4840,12 @@ case "all-tasks":
                 onReject={(req) => handleVerifyAction(req, false)}
                 updatingId={updatingVerifyId}
                 userMap={userMap}
+                allTasks={allTasks}
               />
             </div>
             <div className="lv-cards-only">
               {verifyRequests.map((req) => {
+                const task = allTasks.find((row) => row.id === req.task_id);
                 const isPending = req.status === "pending";
                 const sc =
                   req.status === "approved"
@@ -4809,11 +4862,11 @@ case "all-tasks":
                     <div className="lv-card-top">
                       <div>
                         <div className="lv-card-title">
-                          {req.tasks?.title || `Task #${req.task_id}`}
+                          {task?.title || req.tasks?.title || `Task #${req.task_id}`}
                         </div>
                         <div className="lv-card-sub">
                            Requested by {userMap[req.requested_by] || req.requested_by}
-                          {req.tasks?.site_name && ` · ${req.tasks.site_name}`}
+                          {(task?.site_name || req.tasks?.site_name) && ` · ${task?.site_name || req.tasks.site_name}`}
                         </div>
                       </div>
                       <span
@@ -4842,6 +4895,9 @@ case "all-tasks":
                         }}
                       >
                         Requested: {fmtDate(req.requested_date)}
+                      </span>
+                      <span className="op-meta-pill">
+                        +{Number(req.requested_hours) || 0} hrs requested
                       </span>
                     </div>
 
@@ -4875,7 +4931,7 @@ case "all-tasks":
                     ) : (
                       <div className="lv-already-responded">
                         {req.status === "approved"
-                          ? `✓ Approved — due date updated to ${fmtDate(req.requested_date)}`
+                          ? `✓ Approved — due date updated to ${fmtDate(req.requested_date)}, +${Number(req.requested_hours) || 0} hrs added`
                           : "✗ Rejected"}
                       </div>
                     )}
@@ -4942,6 +4998,7 @@ case "all-tasks":
             Drawing Attachments <span className="lv-req">*</span>
           </label>
           <div
+            className="op-drawing-file-row"
             style={{
               display: "flex",
               alignItems: "center",
@@ -4968,6 +5025,7 @@ case "all-tasks":
               <path d="M16 16l5-5 2 2-5 5-3 1z" />
             </svg>
             <input
+              className="op-drawing-file-input"
               type="file"
               multiple
               accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg,.webp,.doc,.docx"
@@ -5464,7 +5522,7 @@ case "all-drawings":
                 userMap={userMap}
                 onReschedule={(task) => {
                   setRescheduleTask(task);
-                  setRescheduleForm({ requested_date: "", reason: "", verify_with: "" });
+                  setRescheduleForm({ requested_date: "", requested_hours: "", reason: "" });
                 }}
                 onSendVerification={handleSendVerification}
                 onRaiseTicket={handleRaiseTicket}
@@ -5472,6 +5530,7 @@ case "all-drawings":
             </div>
             <div className="lv-cards-only">
               {myReschedules.map((req) => {
+                const task = allTasks.find((row) => row.id === req.task_id);
                 const isPending = req.status === "pending";
                 const isApproved = req.status === "approved";
                 const isRejected = req.status === "rejected";
@@ -5532,7 +5591,7 @@ case "all-drawings":
                           }}
                         >
                           <div className="lv-card-title">
-                            {req.tasks?.title || `Task #${req.task_id}`}
+                            {task?.title || req.tasks?.title || `Task #${req.task_id}`}
                           </div>
                           {/* NEW badge for unread decisions */}
                           {isUnread && (
@@ -5552,9 +5611,9 @@ case "all-drawings":
                             </span>
                           )}
                         </div>
-                        {req.tasks?.site_name && (
+                        {(task?.site_name || req.tasks?.site_name) && (
                           <div className="lv-card-sub">
-                            {req.tasks.site_name}
+                            {task?.site_name || req.tasks.site_name}
                           </div>
                         )}
                       </div>
@@ -5690,7 +5749,7 @@ case "all-drawings":
                         <span>
                           <strong>Approved!</strong> Your task due date has been
                           updated to{" "}
-                          <strong>{fmtDate(req.requested_date)}</strong>.
+                          <strong>{fmtDate(req.requested_date)}</strong> and {Number(req.requested_hours) || 0} additional task hours.
                         </span>
                       </div>
                     )}
@@ -5775,6 +5834,9 @@ case "all-drawings":
                           <path d="M3 3v5h5" />
                         </svg>
                         Requested: {fmtDate(req.requested_date)}
+                      </span>
+                      <span className="op-meta-pill">
+                        +{Number(req.requested_hours) || 0} hrs requested
                       </span>
                     </div>
 
@@ -6676,6 +6738,27 @@ case "all-drawings":
               />
             )}
             </nav>
+            <div className="op-sidebar-footer">
+              <button
+                type="button"
+                className="op-theme-toggle"
+                onClick={() => setIsDark((current) => !current)}
+                aria-label={`Switch to ${isDark ? "light" : "dark"} theme`}
+                title={`Switch to ${isDark ? "light" : "dark"} theme`}
+              >
+                {isDark ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                    <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" />
+                  </svg>
+                )}
+                {isDark ? "Light Mode" : "Dark Mode"}
+              </button>
+            </div>
           </aside>
 
           <main className="op-main" ref={mainRef} >
@@ -6945,10 +7028,16 @@ case "all-drawings":
                       Site: <strong>{rescheduleTask.site_name}</strong>
                     </span>
                   )}
+                  {rescheduleTask.hours_to_complete != null && (
+                    <span>
+                      Current allocation: <strong>{rescheduleTask.hours_to_complete} hrs</strong>
+                    </span>
+                  )}
                 </div>
               </div>
 
-              {/* New date */}
+              {/* New date and additional time */}
+              <div className="op-reschedule-fields">
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 <label
                   style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}
@@ -6982,8 +7071,36 @@ case "all-drawings":
                   }
                 />
                 <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
-                  Must be after the current due date.
+                  Must be on or after the current due date.
                 </span>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                <label style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}>
+                  Additional Hours <span style={{ color: "#94a3b8", fontWeight: 500 }}>(optional)</span>
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.5"
+                  inputMode="decimal"
+                  style={{
+                    fontFamily: "'DM Sans',sans-serif",
+                    fontSize: 13.5,
+                    color: "#1e293b",
+                    background: "#f8fafc",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 8,
+                    padding: "9px 12px",
+                    outline: "none",
+                    width: "100%",
+                  }}
+                  value={rescheduleForm.requested_hours}
+                  onChange={(e) => setRescheduleForm((p) => ({ ...p, requested_hours: e.target.value }))}
+                />
+                <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
+                  Leave blank to keep the current allocation. Any added hours require approval.
+                </span>
+              </div>
               </div>
 
               {/* Reason */}
@@ -7015,58 +7132,6 @@ case "all-drawings":
                     setRescheduleForm((p) => ({ ...p, reason: e.target.value }))
                   }
                 />
-              </div>
-              {/* Send for verification */}
-              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                <label
-                  style={{ fontSize: 12.5, fontWeight: 600, color: "#475569" }}
-                >
-                  Send for Verification To
-                  <span
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 500,
-                      color: "#94a3b8",
-                      background: "#f1f5f9",
-                      borderRadius: 4,
-                      padding: "1px 6px",
-                      marginLeft: 6,
-                    }}
-                  >
-                    optional
-                  </span>
-                </label>
-                <select
-                  style={{
-                    fontFamily: "'DM Sans',sans-serif",
-                    fontSize: 13.5,
-                    color: "#1e293b",
-                    background: "#f8fafc",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: 8,
-                    padding: "9px 12px",
-                    outline: "none",
-                    width: "100%",
-                    cursor: "pointer",
-                  }}
-                  value={rescheduleForm.verify_with}
-                  onChange={(e) =>
-                    setRescheduleForm((p) => ({
-                      ...p,
-                      verify_with: e.target.value,
-                    }))
-                  }
-                >
-                  <option value="">Select Engineer Office staff…</option>
-                  {engineerOfficeUsers.map((u) => (
-                    <option key={u.username} value={u.username}>
-                      {u.name}
-                    </option>
-                  ))}
-                </select>
-                <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
-                  Choose who should verify this task once rescheduled.
-                </span>
               </div>
             </div>
 

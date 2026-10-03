@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Navbar from "../components/Navbar";
+import PortalSettingsMenu from "../components/PortalSettingsMenu";
 import PortalFloaters from "../components/PortalFloaters";
 import { hasPermission, hasAdminCapability } from "../access.js";
 import { pickPermissionFields } from "../lib/permissions";
@@ -1894,16 +1895,12 @@ useEffect(() => {
             );
           })}
         </nav>
-          {/* Theme toggle */}
           <div className="sb-bottom">
-            <button
-              className="sni"
-              onClick={toggleTheme}
-              style={{ width: "100%", justifyContent: "center", borderRadius: 9 }}
-            >
-              {isDark ? Ico.sun : Ico.moon}
-              {isDark ? "Light Mode" : "Dark Mode"}
-            </button>
+            <PortalSettingsMenu
+              user={user}
+              isDark={isDark}
+              onThemeToggle={toggleTheme}
+            />
           </div>
         </aside>
 

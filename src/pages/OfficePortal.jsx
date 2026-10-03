@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Navbar from "../components/Navbar";
+import PortalSettingsMenu from "../components/PortalSettingsMenu";
 import PortalFloaters from "../components/PortalFloaters";
 import { supabase } from "../supabase";
 import SiteReport from "./Sitereport";
@@ -245,6 +246,16 @@ const REPORT_SUBMISSIONS_ITEM = {
     </svg>
   ),
 };
+const OFFICE_PROFILE_ITEM = {
+  key: "profile",
+  label: "Profile",
+  icon: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#bd3c0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 21a7 7 0 0 1 14 0" />
+    </svg>
+  ),
+};
 const LEAVE_TYPES = [
   "Casual Leave",
   "Sick Leave",
@@ -292,6 +303,7 @@ function getViewUrl(url) {
   }
   return url; // pdf, images, etc. — browser can render natively
 }
+
 
 // ── Filter Bar ─────────────────────────────────────────────────────────────
 function TaskFilterBar({
@@ -6739,25 +6751,11 @@ case "all-drawings":
             )}
             </nav>
             <div className="op-sidebar-footer">
-              <button
-                type="button"
-                className="op-theme-toggle"
-                onClick={() => setIsDark((current) => !current)}
-                aria-label={`Switch to ${isDark ? "light" : "dark"} theme`}
-                title={`Switch to ${isDark ? "light" : "dark"} theme`}
-              >
-                {isDark ? (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="4" />
-                    <path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" />
-                  </svg>
-                ) : (
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <path d="M20.9 13A9 9 0 0 1 11 3.1 9 9 0 1 0 20.9 13Z" />
-                  </svg>
-                )}
-                {isDark ? "Light Mode" : "Dark Mode"}
-              </button>
+              <PortalSettingsMenu
+                user={user}
+                isDark={isDark}
+                onThemeToggle={() => setIsDark((current) => !current)}
+              />
             </div>
           </aside>
 

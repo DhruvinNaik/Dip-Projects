@@ -48,6 +48,7 @@ body{font-family:'Segoe UI',Arial,sans-serif;font-size:14px;line-height:1.7;colo
 .bullet-item:last-child{border-bottom:none;}
 .bullet-arrow{color:#800000;font-weight:700;font-size:12px;margin-top:4px;flex-shrink:0;}
 .bullet-text{font-size:15px;color:#0f172a;line-height:1.5;}
+.bullet-heading{display:block;padding:8px 0;font-weight:700;}
 
 /* ── INFO ROWS (visit details) ── */
 .info-row{display:flex;gap:20px;padding:10px 16px;border-bottom:1px solid #cbd5e1;}
@@ -111,8 +112,18 @@ function bulletBlock(txt) {
   if (!lines.length) return "";
 
   return `<div class="bullet-list">${lines.map(l => {
-    const isSub = /^ {2,}/.test(l);
-    const text  = esc(l.replace(/^[\s•◦\-*]+/, "").trim());
+    const bulletMatch = l.match(/^(\s*)([•◦*-])\s*/);
+    const text = esc(
+      (bulletMatch ? l.slice(bulletMatch[0].length) : l).trim(),
+    );
+    if (!text) return "";
+    if (!bulletMatch) {
+      return `<div class="bullet-item bullet-heading">
+        <span class="bullet-text">${text}</span>
+      </div>`;
+    }
+
+    const isSub = /^ {2,}/.test(bulletMatch[1]) || bulletMatch[2] === "◦";
 
     if (isSub) {
       return `<div class="bullet-item" style="padding-left:32px;border-bottom:1px solid #f8fafc;">

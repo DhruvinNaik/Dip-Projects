@@ -1,6 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 import Navbar from "../components/Navbar";
+import PortalSettingsMenu from "../components/PortalSettingsMenu";
 import PortalFloaters from "../components/PortalFloaters";
 import SiteReport from "./Sitereport";
 import { ClockInOut, CalendarView, CLOCK_CSS } from "./Clockinout.jsx";
@@ -2964,16 +2965,11 @@ useEffect(() => {
 
             {/* Settings pinned to bottom */}
             <div className="sb-bottom">
-              <SniButton
-                itemKey="profile"
-                icon={Ico.settings}
-                label="Settings & Profile"
-                isActive={activeTab === "profile"}
-                isHovered={hoveredNavKey === "profile"}
-                onEnter={() => setHoveredNavKey("profile")}
-                onLeave={() => setHoveredNavKey(null)}
-                onClick={() => nav("profile")}
-                style={{ width: "100%", borderRadius: 9 }}
+              <PortalSettingsMenu
+                user={user}
+                isDark={isDark}
+                onThemeToggle={toggleTheme}
+                onProfileClick={() => nav("profile")}
               />
             </div>
           </aside>

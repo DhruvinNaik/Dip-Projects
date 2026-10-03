@@ -6190,6 +6190,7 @@ const [dailyReportRows, setDailyReportRows] = useState(null); // null = not gene
 const [dailyReportRemarks, setDailyReportRemarks] = useState({}); // { [taskId]: remarkText }
   const [delayRange, setDelayRange] = useState("this_month");
 const [delayEmployee, setDelayEmployee] = useState("");
+const [delayDepartment, setDelayDepartment] = useState("");
 const [delayReportRows, setDelayReportRows] = useState(null); // null = not generated yet
 const [delayReportMeta, setDelayReportMeta] = useState(null);
   const [visibleTaskCount, setVisibleTaskCount] = useState(30);
@@ -6961,13 +6962,20 @@ const handleExportMisCsv = () => {
   URL.revokeObjectURL(url);
 };
 
+const EXCLUDED_DEPARTMENTS = ["site engineer", "client"];
+
 const handleGenerateDelayReport = () => {
   const { from, to } = getRangeDates(delayRange);
   const inRange = allTasks.filter((t) => {
     if (!t.created_at) return false;
     const created = new Date(t.created_at);
     if (created < from || created > to) return false;
+    const empDept = (employees.find((e) => e.username === t.assigned_to)?.department || "").toLowerCase();
+    if (EXCLUDED_DEPARTMENTS.includes(empDept)) return false;
     if (delayEmployee && t.assigned_to !== delayEmployee) return false;
+    if (delayDepartment) {
+      if (empDept !== delayDepartment.toLowerCase()) return false;
+    }
     return true;
   });
   const rows = inRange
@@ -8037,6 +8045,7 @@ const misWeeklyData = misWeeklyDataRaw.map((wd) => ({
         const emp = employeeByUsername.get(r.username);
         return { ...r, name: emp?.name || r.username, department: emp?.department || "" };
       })
+      .filter((r) => !EXCLUDED_DEPARTMENTS.includes(normalizeText(r.department)))
       .filter((r) => !misDepartment || normalizeText(r.department) === normalizeText(misDepartment)),
     misSort,
   ),
@@ -8045,7 +8054,7 @@ const misWeeklyData = misWeeklyDataRaw.map((wd) => ({
 const misVisibleWeeks =
   misWeekPill === "all" ? misWeeklyData : misWeeklyData.filter((wd) => wd.week.key === misWeekPill);
 
-const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filter(Boolean))].sort();
+const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
   const tfSites = [
     ...new Set(tasksForSites.map((t) => t.site_name).filter(Boolean)),
   ].sort();
@@ -10656,9 +10665,25 @@ const misDepartmentOptions = [...new Set(employees.map((e) => e.department).filt
           <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Employee</label>
           <select className="ap-input ap-select" value={delayEmployee} onChange={(e) => setDelayEmployee(e.target.value)} style={{ minWidth: 180 }}>
             <option value="">All employees</option>
-            {employees.map((e) => (
-              <option key={e.username} value={e.username}>{e.name}</option>
-            ))}
+            {employees
+              .filter((e) => {
+                const d = (e.department || "").toLowerCase();
+                if (EXCLUDED_DEPARTMENTS.includes(d)) return false;
+                if (delayDepartment && d !== delayDepartment.toLowerCase()) return false;
+                return true;
+              })
+              .map((e) => (
+                <option key={e.username} value={e.username}>{e.name}</option>
+              ))}
+          </select>
+        </div>
+        <div>
+          <label style={{ display: "block", fontSize: 10.5, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 5 }}>Department</label>
+          <select className="ap-input ap-select" value={delayDepartment} onChange={(e) => { setDelayDepartment(e.target.value); setDelayEmployee(""); }} style={{ minWidth: 160 }}>
+            <option value="">All departments</option>
+            <option value="admin">Admin</option>
+            <option value="engineer office">Engineer Office</option>
+            <option value="mdo office">MDO Office</option>
           </select>
         </div>
         <button className="ap-btn-primary" onClick={handleGenerateDelayReport}>
@@ -10795,7 +10820,7 @@ case "mis-report":
           <select className="ap-input ap-select" value={misDepartment} onChange={(e) => setMisDepartment(e.target.value)} style={{ minWidth: 160 }}>
             <option value="">All departments</option>
             {misDepartmentOptions.map((d) => (
-              <option key={d} value={d}>{d}</option>
+              <option key={d} value={d}>{d === "mdo office" ? "MDO Office" : d === "engineer office" ? "Engineer Office" : d === "admin" ? "Admin" : d}</option>
             ))}
           </select>
         </div>

@@ -2852,6 +2852,7 @@ const [ticketDetail, setTicketDetail] = useState(null);
   const [profileSiteFilter, setProfileSiteFilter] = useState("all"); // "all"|"weekly"|"monthly"|"custom"
   const [profileDateFrom, setProfileDateFrom]   = useState("");
   const [profileDateTo,   setProfileDateTo]     = useState("");
+  const [profileDeptFilter, setProfileDeptFilter] = useState(""); // "" = all departments
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   useEffect(() => {
     const theme = isDark ? "dark" : "light";
@@ -3048,17 +3049,21 @@ useEffect(() => {
   
 
   const [userMap, setUserMap] = useState({});
+  const [deptMap, setDeptMap] = useState({}); // username → department
   useEffect(() => {
     supabase
       .from("user_details")
-      .select("username, name")
+      .select("username, name, department")
       .then(({ data, error }) => {
         if (!error && data) {
           const map = {};
+          const dept = {};
           data.forEach((u) => {
             map[u.username] = u.name;
+            if (u.department) dept[u.username] = u.department;
           });
           setUserMap(map);
+          setDeptMap(dept);
         }
       });
   }, []);
@@ -6826,19 +6831,29 @@ case "all-drawings":
                 const d = t.created_at ? t.created_at.slice(0, 10) : null;
                 if (profileSiteFilter === "weekly") {
                   const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
-                  return d && d >= weekAgo.toISOString().slice(0, 10);
+                  if (!d || d < weekAgo.toISOString().slice(0, 10)) return false;
                 }
                 if (profileSiteFilter === "monthly") {
                   const moAgo = new Date(today); moAgo.setDate(today.getDate() - 30);
-                  return d && d >= moAgo.toISOString().slice(0, 10);
+                  if (!d || d < moAgo.toISOString().slice(0, 10)) return false;
                 }
                 if (profileSiteFilter === "custom") {
                   if (profileDateFrom && d && d < profileDateFrom) return false;
                   if (profileDateTo   && d && d > profileDateTo)   return false;
-                  return true;
                 }
-                return true; // "all"
+                if (profileDeptFilter) {
+                  const taskDept = deptMap[t.assigned_by] || "";
+                  if (taskDept !== profileDeptFilter) return false;
+                }
+                return true;
               };
+
+              // Distinct departments from the current (date-unfiltered) task list
+              const availableDepts = [...new Set(
+                allAssignedTasks
+                  .map(t => deptMap[t.assigned_by] || "")
+                  .filter(Boolean)
+              )].sort();
 
               const filtered = allAssignedTasks.filter(filterTask);
 
@@ -6884,7 +6899,7 @@ case "all-drawings":
                 doc.setFontSize(14); doc.setFont("helvetica", "bold");
                 doc.text("Site-wise Task Breakdown", 14, 14);
                 doc.setFontSize(9); doc.setFont("helvetica", "normal");
-                doc.text(`Generated: ${new Date().toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })}   Period: ${periodLabel}   Employee: ${user?.name || ""}`, 14, 19);
+                doc.text(`Generated: ${new Date().toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })}   Period: ${periodLabel}   Employee: ${user?.name || ""}${profileDeptFilter ? `   Dept: ${profileDeptFilter}` : ""}`, 14, 19);
 
                 // Summary row
                 doc.setTextColor(30, 41, 59);
@@ -6962,6 +6977,38 @@ case "all-drawings":
                               max={todayStr}
                               onChange={e => setProfileDateTo(e.target.value)} />
                           </div>
+                        </div>
+                      )}
+
+                      {/* Department filter */}
+                      {availableDepts.length > 0 && (
+                        <div className="op-site-dept-filter">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, opacity: 0.55 }}>
+                            <rect x="2" y="7" width="20" height="14" rx="2"/>
+                            <path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/>
+                          </svg>
+                          <select
+                            className="op-site-dept-select"
+                            value={profileDeptFilter}
+                            onChange={e => setProfileDeptFilter(e.target.value)}
+                          >
+                            <option value="">All Departments</option>
+                            {availableDepts.map(d => (
+                              <option key={d} value={d}>{d}</option>
+                            ))}
+                          </select>
+                          {profileDeptFilter && (
+                            <button
+                              type="button"
+                              className="op-site-dept-clear"
+                              onClick={() => setProfileDeptFilter("")}
+                              title="Clear department filter"
+                            >
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                                <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                              </svg>
+                            </button>
+                          )}
                         </div>
                       )}
 

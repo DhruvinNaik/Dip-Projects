@@ -101,6 +101,7 @@ function Ring({ score, size = 72, stroke = 7, color, label, sub, isMain = false 
   );
 }
 
+
 // ── PerformanceScore ──────────────────────────────────────────────────────────
 export function PerformanceScore({ chartData }) {
   if (!chartData || !chartData.length) return null;

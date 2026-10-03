@@ -291,6 +291,23 @@
           }
           .op-site-date-input:focus { border-color: var(--portal-accent-middle, #7a2e00); box-shadow: 0 0 0 2px color-mix(in srgb, var(--portal-accent-middle, #7a2e00) 15%, transparent); }
           .op-site-date-sep { font-size: 13px; color: #94a3b8; font-weight: 600; margin-top: 14px; }
+          .op-site-dept-filter {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #fff; border: 1.5px solid #e2e8f0; border-radius: 8px;
+            padding: 4px 10px; min-width: 0;
+          }
+          .op-site-dept-select {
+            font: inherit; font-size: 12px; color: #334155;
+            background: transparent; border: none; outline: none; cursor: pointer;
+            padding: 0; max-width: 180px;
+          }
+          .op-site-dept-clear {
+            display: inline-flex; align-items: center; justify-content: center;
+            background: #e2e8f0; border: none; border-radius: 50%; width: 18px; height: 18px;
+            cursor: pointer; padding: 0; color: #64748b; flex-shrink: 0;
+            transition: background .12s, color .12s;
+          }
+          .op-site-dept-clear:hover { background: #cbd5e1; color: #1e293b; }
           .op-site-pdf-btn {
             margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
             font: inherit; font-size: 12.5px; font-weight: 700;
@@ -704,6 +721,10 @@
         [data-theme="dark"] .op-root .op-site-table tbody tr:hover td { background: #1e2c38; }
         [data-theme="dark"] .op-root .op-site-name-cell { color: #c8d8e4; }
         [data-theme="dark"] .op-root .op-site-total-row td { background: #1a2530; border-color: #35434f; color: #c8d8e4; }
+        [data-theme="dark"] .op-root .op-site-dept-filter { background: #202d38; border-color: #35434f; }
+        [data-theme="dark"] .op-root .op-site-dept-select { color: #c8d8e4; }
+        [data-theme="dark"] .op-root .op-site-dept-clear { background: #263340; color: #a8b5bf; }
+        [data-theme="dark"] .op-root .op-site-dept-clear:hover { background: #35434f; color: #e5edf2; }
         [data-theme="dark"] .op-root .op-sidebar-header,
         [data-theme="dark"] .op-root .op-content-header { border-color: var(--op-border); }
         [data-theme="dark"] .op-root .op-nav-section,

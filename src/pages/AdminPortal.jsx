@@ -5892,6 +5892,18 @@ export default function AdminPortal() {
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window === "undefined" ? true : window.innerWidth > 760,
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isMobile = window.innerWidth <= 760;
+    if (isMobile && sidebarOpen) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [sidebarOpen]);
 const [hoveredNavKey, setHoveredNavKey] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showTaskModal, setShowTaskModal] = useState(false);

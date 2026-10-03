@@ -33,7 +33,6 @@
   position: sticky;
   top: 60px;
   height: calc(100vh - 60px);
-  overflow-y: auto;
 }
 .hr-sidebar.collapsed {
   width: 0;
@@ -48,6 +47,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 12px;
+  flex-shrink: 0;
 }
 .hr-sidebar-close {
   display: none;
@@ -65,11 +65,19 @@
 
 .hr-nav {
   padding: 10px;
-  flex: 1;
+  flex: 1 1 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  touch-action: pan-y;
 }
+.hr-nav::-webkit-scrollbar { width: 3px; }
+.hr-nav::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
 .hr-nav-section {
   font-size: 10px;
   font-weight: 700;
@@ -1292,6 +1300,8 @@
     left: 0;
     z-index: 10020;
     height: 100vh;
+    height: 100dvh;
+    max-height: 100dvh;
     width: min(84vw, 300px);
     min-width: 0;
     border-right: 1px solid var(--hr-border);
@@ -1299,6 +1309,10 @@
     opacity: 1;
     box-shadow: 12px 0 34px rgba(15,23,42,.18);
     transition: transform .22s ease, opacity .18s ease;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    touch-action: pan-y;
   }
   .hr-sidebar.collapsed {
     width: min(84vw, 300px);
@@ -1306,6 +1320,10 @@
     transform: translateX(-105%);
     opacity: 0;
     pointer-events: none;
+  }
+  .hr-sidebar-header {
+    flex-shrink: 0;
+    padding-top: calc(12px + env(safe-area-inset-top, 0px));
   }
   .hr-sidebar-close { display: inline-flex; }
   .hr-sidebar-backdrop {
@@ -1317,6 +1335,18 @@
     backdrop-filter: blur(2px);
     border: none;
     padding: 0;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  .hr-nav {
+    flex: 1 1 0%;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-y: contain;
+    touch-action: pan-y;
+    padding: 10px 10px calc(48px + env(safe-area-inset-bottom, 0px));
   }
   .hr-main { padding: 16px 14px 24px; overflow: visible; }
   .hr-stat-grid { grid-template-columns: 1fr; }

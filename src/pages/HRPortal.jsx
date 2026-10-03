@@ -889,6 +889,18 @@ export default function HRPortal() {
     return () => window.removeEventListener("resize", onResize);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isMobile = window.innerWidth <= 760;
+    if (isMobile && sidebarOpen) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [sidebarOpen]);
+
   if (!user)
     return (
       <div className="hr-loading">

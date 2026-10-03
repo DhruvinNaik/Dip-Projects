@@ -2858,6 +2858,18 @@ const [ticketDetail, setTicketDetail] = useState(null);
     document.documentElement.setAttribute("data-theme", theme);
     localStorage.setItem("theme", theme);
   }, [isDark]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isMobile = window.innerWidth <= 760;
+    if (isMobile && sidebarOpen) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [sidebarOpen]);
   // Tasks
   const [myTasks, setMyTasks] = useState([]);
   const [recurringTasks, setRecurringTasks] = useState([]);

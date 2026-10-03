@@ -566,7 +566,8 @@
     overflow-y:auto;
     overflow-x:hidden;
     -webkit-overflow-scrolling:touch;
-    overscroll-behavior:contain;
+    overscroll-behavior-y:contain;
+    touch-action:pan-y;
   }
   .snav::-webkit-scrollbar{width:3px;}
   .snav::-webkit-scrollbar-thumb{background:var(--line2);border-radius:2px;}
@@ -745,12 +746,14 @@
       z-index:10020;
       width:min(85vw,270px);
       min-width:min(85vw,270px);
+      height:calc(100vh - 75px);
       height:calc(100dvh - 75px);
       max-height:calc(100dvh - 75px);
-      overflow-x:hidden;
-      overflow-y:scroll;
+      display:flex;
+      flex-direction:column;
+      overflow:hidden;
       -webkit-overflow-scrolling:touch;
-      overscroll-behavior:contain;
+      overscroll-behavior-y:contain;
       touch-action:pan-y;
       pointer-events:auto;
       transform:translateX(0);
@@ -764,14 +767,19 @@
       pointer-events:none;
     }
     .snav{
-      flex:none;
+      flex:1 1 0%;
       min-height:0;
       height:auto;
-      overflow:visible;
+      overflow-y:auto;
+      overflow-x:hidden;
+      -webkit-overflow-scrolling:touch;
+      overscroll-behavior-y:contain;
+      touch-action:pan-y;
       padding:14px 10px 24px;
       padding-bottom:calc(24px + env(safe-area-inset-bottom, 0px));
     }
     .sb-bottom{
+      flex-shrink:0;
       position:relative;
       bottom:auto;
       background:var(--surface);
@@ -804,6 +812,7 @@
   @media(max-width:600px){
     .sidebar{
       top:56px;
+      height:calc(100vh - 56px);
       height:calc(100dvh - 56px);
       max-height:calc(100dvh - 56px);
     }

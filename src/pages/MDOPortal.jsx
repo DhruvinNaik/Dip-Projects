@@ -1803,6 +1803,18 @@ useEffect(() => {
     return () => window.removeEventListener("resize", onResize);
   }, [loadUser]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const isMobile = window.innerWidth <= 768;
+    if (isMobile && sidebarOpen) {
+      const origOverflow = document.body.style.overflow;
+      document.body.style.overflow = "hidden";
+      return () => {
+        document.body.style.overflow = origOverflow;
+      };
+    }
+  }, [sidebarOpen]);
+
   // ← add it here
   useEffect(() => {
     if (user) fetchDrawings(user);
@@ -1855,16 +1867,7 @@ useEffect(() => {
           <div style={{ padding: "14px 14px 6px", fontSize: 11, fontWeight: 800, letterSpacing: ".08em", color: "var(--ink3)", textTransform: "uppercase" }}>
             MDO Office Portal
           </div>
-          <nav
-          className="snav"
-          style={{
-            overflowY: "auto",
-            maxHeight: "none",
-            height: "auto",
-            display: "flex",
-            flexDirection: "column",
-          }}  
-        >
+          <nav className="snav">
           {NAV.map((n) => {
             const color = NAV_COLORS[n.key] || "#2563eb";
             const highlighted = activeTab === n.key || hoveredNavKey === n.key;

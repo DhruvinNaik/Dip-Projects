@@ -26,9 +26,9 @@
           
           .op-sidebar-close { display: none; width: 32px; height: 32px; border-radius: 8px; border: 1px solid #c9d0d4d0; background: #fff; color: #64748b; cursor: pointer; align-items: center; justify-content: center; }
           .op-sidebar-backdrop { display: none; }
-          .op-nav { padding: 10px; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; touch-action: pan-y; }
-          .op-nav::-webkit-scrollbar { width: 3px; }
-          .op-nav::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+          .op-nav { padding: 10px; flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; touch-action: pan-y; scrollbar-width: thin; scrollbar-color: var(--portal-scrollbar-thumb, #c96a10) transparent; }
+          .op-nav::-webkit-scrollbar { width: 2px; }
+          .op-nav::-webkit-scrollbar-thumb { background: var(--portal-scrollbar-thumb, #c96a10); border-radius: 2px; }
           .op-nav-section { font-size: 10px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: #000000; padding: 12px 12px 4px; }
           .op-nav-item { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 8px; cursor: pointer; color: #64748b; font-size: 13.5px; font-weight: 500; white-space: nowrap; border: none; background: transparent; width: 100%; text-align: left; transition: background .15s, color .15s; position: relative; }
           .op-nav-item:hover  { background: #f1f5f9; color: #1e293b; }
@@ -693,7 +693,7 @@
 
         /* Site table dark mode */
         [data-theme="dark"] .op-root .op-site-filter-row { border-color: #35434f; }
-        [data-theme="dark"] .op-root .op-site-filter-bar { border-color: #35434f; }
+        [data-theme="dark"] .op-root .op-site-filter-bar { background: #1a2530; border-color: #35434f; }
         [data-theme="dark"] .op-root .op-site-filter-btn { background: #202d38; border-color: #35434f; color: #a8b5bf; }
         [data-theme="dark"] .op-root .op-site-filter-btn:hover { border-color: #526170; color: #e5edf2; }
         [data-theme="dark"] .op-root .op-site-date-input { background: #202d38; border-color: #35434f; color: #e5edf2; }

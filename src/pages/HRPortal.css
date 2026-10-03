@@ -77,7 +77,7 @@
   touch-action: pan-y;
 }
 .hr-nav::-webkit-scrollbar { width: 3px; }
-.hr-nav::-webkit-scrollbar-thumb { background: #e2e8f0; border-radius: 2px; }
+.hr-nav::-webkit-scrollbar-thumb { background: var(--portal-scrollbar-thumb, #c96a10); border-radius: 2px; }
 .hr-nav-section {
   font-size: 10px;
   font-weight: 700;

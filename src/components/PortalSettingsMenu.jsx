@@ -435,7 +435,7 @@ export default function PortalSettingsMenu({
         document.body,
       )}
 
-      {logoutOpen && (
+      {logoutOpen && createPortal(
         <div
           className="logout-backdrop"
           onClick={() => setLogoutOpen(false)}
@@ -490,7 +490,8 @@ export default function PortalSettingsMenu({
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </>
   );

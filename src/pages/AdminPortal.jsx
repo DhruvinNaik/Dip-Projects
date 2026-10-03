@@ -1224,7 +1224,7 @@ function buildDailyReportRows(tasks, fromDate, toDate, userMap) {
       };
     });
 }
-function buildDelayRow(task, index, userMap) {
+function buildDelayRow(task, index, userMap, verificationMap = {}) {
   const assignedAt = task.created_at ? new Date(task.created_at) : null;
   const acceptedAt = task.accepted_at ? new Date(task.accepted_at) : null;
   const hoursToComplete = task.hours_to_complete ? parseFloat(task.hours_to_complete) : null;
@@ -1242,26 +1242,64 @@ function buildDelayRow(task, index, userMap) {
   const isPending = task.status !== "completed";
   const comparisonPoint = isPending ? now : submittedAt;
 
+  // Work status & work delay (from assigned deadline perspective)
   let statusLabel = "N/A";
   let delayLabel = "—";
+  let workDelayMins = null;
   if (dueDateTime && comparisonPoint) {
     const diffMins = (comparisonPoint - dueDateTime) / 60000;
+    workDelayMins = diffMins;
     if (diffMins > 0) {
       statusLabel = "Delayed";
       delayLabel = formatDurationShort(diffMins);
     } else {
       statusLabel = "On Time";
-      delayLabel = isPending ? "Within deadline" : `${formatDurationShort(diffMins)} early`;
+      delayLabel = isPending ? "Within deadline" : `${formatDurationShort(Math.abs(diffMins))} early`;
     }
   }
 
   const totalHoldSecs = Number(task.accumulated_seconds) || 0;
 
+  // ── Verification columns ──────────────────────────────────────
+  const verif = verificationMap[task.id] || null;
+
+  // Sent for verification: when the admin first sent this task for verification
+  const sentForVerification = verif?.created_at ? new Date(verif.created_at) : null;
+
+  // Start Verification: same as sentForVerification (when verifier received it)
+  const startVerification = sentForVerification;
+
+  // Verified: when verifier resolved it
+  const verified = verif?.resolved_at ? new Date(verif.resolved_at) : null;
+
+  // Verify status: pending / completed / correction_sent → display label
+  let verifyStatusLabel = "—";
+  if (verif) {
+    if (verif.status === "completed") verifyStatusLabel = "Verified";
+    else if (verif.status === "correction_sent") verifyStatusLabel = "Correction";
+    else if (verif.status === "pending") verifyStatusLabel = "Pending";
+    else verifyStatusLabel = verif.status || "—";
+  }
+
+  // Verify delay: time between sentForVerification and resolved_at
+  let verifyDelayLabel = "—";
+  if (sentForVerification && verified) {
+    const vDiffMins = (verified - sentForVerification) / 60000;
+    verifyDelayLabel = formatDurationShort(vDiffMins);
+  } else if (sentForVerification && !verified && verif?.status === "pending") {
+    const vDiffMins = (now - sentForVerification) / 60000;
+    verifyDelayLabel = `${formatDurationShort(vDiffMins)} (open)`;
+  }
+
   return {
     sr: index + 1,
     id: task.id,
+    // raw task fields (for popup detail view)
+    _task: task,
     employee: userMap[task.assigned_to] || task.assigned_to || "—",
     project: task.site_name || task.title || "—",
+    taskTitle: task.title || "—",
+    taskDescription: task.description || "",
     assignedAt,
     acceptedAt,
     hoursToComplete,
@@ -1272,7 +1310,14 @@ function buildDelayRow(task, index, userMap) {
     isPending,
     statusLabel,
     delayLabel,
+    workDelayMins,
     rescheduleCount: task._rescheduleCount || 0,
+    // verification
+    sentForVerification,
+    startVerification,
+    verified,
+    verifyStatusLabel,
+    verifyDelayLabel,
   };
 }
 function getMonthWeeks(monthStr) {
@@ -6193,6 +6238,7 @@ const [delayEmployee, setDelayEmployee] = useState("");
 const [delayDepartment, setDelayDepartment] = useState("");
 const [delayReportRows, setDelayReportRows] = useState(null); // null = not generated yet
 const [delayReportMeta, setDelayReportMeta] = useState(null);
+const [delaySelectedTask, setDelaySelectedTask] = useState(null); // row-click detail popup
   const [visibleTaskCount, setVisibleTaskCount] = useState(30);
   const [visibleOverdueCount, setVisibleOverdueCount] = useState(30);
   const [visiblePendingVerificationCount, setVisiblePendingVerificationCount] =
@@ -6978,10 +7024,21 @@ const handleGenerateDelayReport = () => {
     }
     return true;
   });
+
+  // Build verificationMap: task_id → latest verification record (using already-loaded pendingVerifications)
+  const verificationMap = {};
+  pendingVerifications.forEach((v) => {
+    if (!v.task_id) return;
+    const existing = verificationMap[v.task_id];
+    if (!existing || new Date(v.created_at) > new Date(existing.created_at)) {
+      verificationMap[v.task_id] = v;
+    }
+  });
+
   const rows = inRange
     .slice()
     .sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
-    .map((t, i) => buildDelayRow(t, i, userMap));
+    .map((t, i) => buildDelayRow(t, i, userMap, verificationMap));
 
   const delayed = rows.filter((r) => r.statusLabel === "Delayed").length;
   const onTime = rows.filter((r) => r.statusLabel === "On Time").length;
@@ -10741,28 +10798,44 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
 
           <div className="ap-table-wrap">
             <table className="ap-table">
-              <thead>
+              <thead style={{ background: "#1e293b" }}>
                 <tr style={{ background: "#1e293b" }}>
-                  {["SR", "Employee", "Project", "Timestamp (Assigned)", "Emp Acceptance Time", "Hrs to Complete", "Hold / Resume", "Total Hold", "Due", "Submitted", "Status", "Delay"].map((h) => (
+                  {[
+                    "SR", "Employee", "Project", "Task Description",
+                    "Timestamp (Assigned)", "Emp Acceptance Time", "Hrs to Complete",
+                    "Hold / Resume", "Total Hold", "Due",
+                    "Sent for Verification", "Work Status", "Work Delay",
+                    "Start Verification", "Verified", "Verify Status", "Verify Delay",
+                  ].map((h) => (
                     <th key={h} className="ap-th" style={{ color: "#fff", background: "#1e293b" }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {delayReportRows.map((r) => (
-                  <tr key={r.id} className="ap-tr">
+                  <tr
+                    key={r.id}
+                    className="ap-tr delay-report-row"
+                    onClick={() => setDelaySelectedTask(r)}
+                    title="Click to view full details"
+                  >
                     <td className="ap-td" style={{ color: "#2563eb", fontWeight: 700 }}>{r.sr}</td>
                     <td className="ap-td ap-td-title">{r.employee}</td>
                     <td className="ap-td">{r.project}</td>
+                    <td className="ap-td">
+                      {r.taskDescription ? (
+                        <span className="delay-desc-clamp">{r.taskDescription}</span>
+                      ) : (
+                        <span style={{ color: "#94a3b8" }}>—</span>
+                      )}
+                    </td>
                     <td className="ap-td">{fmtDT(r.assignedAt)}</td>
                     <td className="ap-td">{fmtDT(r.acceptedAt)}</td>
                     <td className="ap-td">{r.hoursToComplete ? `+${r.hoursToComplete}h` : "—"}</td>
                     <td className="ap-td">{r.holdResume}</td>
                     <td className="ap-td">{r.totalHold}</td>
                     <td className="ap-td">{fmtDT(r.dueDateTime)}</td>
-                    <td className="ap-td">
-                      {r.submittedAt ? fmtDT(r.submittedAt) : <span style={{ color: "#2563eb" }}>Not submitted (Pending)</span>}
-                    </td>
+                    <td className="ap-td">{fmtDT(r.sentForVerification)}</td>
                     <td className="ap-td">
                       <span className="ap-badge" style={{
                         background: r.statusLabel === "Delayed" ? "#fef2f2" : r.statusLabel === "On Time" ? "#f0fdf4" : "#f1f5f9",
@@ -10773,6 +10846,20 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
                       </span>
                     </td>
                     <td className="ap-td" style={{ fontWeight: 600 }}>{r.delayLabel}</td>
+                    <td className="ap-td">{fmtDT(r.startVerification)}</td>
+                    <td className="ap-td">{fmtDT(r.verified)}</td>
+                    <td className="ap-td">
+                      {r.verifyStatusLabel !== "—" ? (
+                        <span className="ap-badge" style={{
+                          background: r.verifyStatusLabel === "Verified" ? "#f0fdf4" : r.verifyStatusLabel === "Correction" ? "#fff7ed" : r.verifyStatusLabel === "Pending" ? "#eff6ff" : "#f1f5f9",
+                          color: r.verifyStatusLabel === "Verified" ? "#16a34a" : r.verifyStatusLabel === "Correction" ? "#ea580c" : r.verifyStatusLabel === "Pending" ? "#2563eb" : "#64748b",
+                          fontWeight: 700,
+                        }}>
+                          {r.verifyStatusLabel}
+                        </span>
+                      ) : "—"}
+                    </td>
+                    <td className="ap-td" style={{ fontWeight: 600 }}>{r.verifyDelayLabel}</td>
                   </tr>
                 ))}
               </tbody>
@@ -10780,6 +10867,84 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
           </div>
         </div>
       )}
+
+      {/* ── Row-detail popup ─────────────────────────────────── */}
+      {delaySelectedTask && (() => {
+        const r = delaySelectedTask;
+        const detailRows = [
+          { label: "Employee",              value: r.employee },
+          { label: "Project / Site",        value: r.project },
+          { label: "Task Title",            value: r.taskTitle },
+          { label: "Description",           value: r.taskDescription || "—", full: true },
+          { label: "Assigned At",           value: fmtDT(r.assignedAt) },
+          { label: "Emp Acceptance Time",   value: fmtDT(r.acceptedAt) },
+          { label: "Hrs to Complete",       value: r.hoursToComplete ? `+${r.hoursToComplete}h` : "—" },
+          { label: "Hold / Resume",         value: r.holdResume },
+          { label: "Total Hold",            value: r.totalHold },
+          { label: "Due",                   value: fmtDT(r.dueDateTime) },
+          { label: "Submitted",             value: r.submittedAt ? fmtDT(r.submittedAt) : "Not submitted (Pending)" },
+          { label: "Work Status",           value: r.statusLabel },
+          { label: "Work Delay",            value: r.delayLabel },
+          { label: "Sent for Verification", value: fmtDT(r.sentForVerification) },
+          { label: "Start Verification",    value: fmtDT(r.startVerification) },
+          { label: "Verified At",           value: fmtDT(r.verified) },
+          { label: "Verify Status",         value: r.verifyStatusLabel },
+          { label: "Verify Delay",          value: r.verifyDelayLabel },
+        ];
+        return (
+          <div className="dr-overlay" onClick={() => setDelaySelectedTask(null)}>
+            <div className="dr-modal" onClick={(e) => e.stopPropagation()}>
+              {/* Header */}
+              <div className="dr-modal-header">
+                <div>
+                  <div className="dr-modal-title">Task Detail</div>
+                  <div className="dr-modal-subtitle">#{r.sr} · {r.employee} · {r.project}</div>
+                </div>
+                <button className="dr-modal-close" onClick={() => setDelaySelectedTask(null)} aria-label="Close">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+
+              {/* Status badges row */}
+              <div className="dr-modal-badges">
+                <span className="ap-badge" style={{
+                  background: r.statusLabel === "Delayed" ? "#fef2f2" : r.statusLabel === "On Time" ? "#f0fdf4" : "#f1f5f9",
+                  color: r.statusLabel === "Delayed" ? "#dc2626" : r.statusLabel === "On Time" ? "#16a34a" : "#64748b",
+                  fontWeight: 700, fontSize: 12,
+                }}>
+                  Work: {r.statusLabel}
+                </span>
+                {r.verifyStatusLabel !== "—" && (
+                  <span className="ap-badge" style={{
+                    background: r.verifyStatusLabel === "Verified" ? "#f0fdf4" : r.verifyStatusLabel === "Correction" ? "#fff7ed" : r.verifyStatusLabel === "Pending" ? "#eff6ff" : "#f1f5f9",
+                    color: r.verifyStatusLabel === "Verified" ? "#16a34a" : r.verifyStatusLabel === "Correction" ? "#ea580c" : r.verifyStatusLabel === "Pending" ? "#2563eb" : "#64748b",
+                    fontWeight: 700, fontSize: 12,
+                  }}>
+                    Verify: {r.verifyStatusLabel}
+                  </span>
+                )}
+                {r.isPending && (
+                  <span className="ap-badge" style={{ background: "#eff6ff", color: "#2563eb", fontWeight: 700, fontSize: 12 }}>
+                    Pending Submission
+                  </span>
+                )}
+              </div>
+
+              {/* Detail grid */}
+              <div className="dr-modal-grid">
+                {detailRows.map(({ label, value, full }) => (
+                  <div key={label} className={`dr-modal-field${full ? " dr-modal-field--full" : ""}`}>
+                    <div className="dr-field-label">{label}</div>
+                    <div className="dr-field-value">{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

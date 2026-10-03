@@ -12104,17 +12104,17 @@ case "all-drawings":
                 </svg>
               </button>
             </div>
-            <PortalSwitcher
-              items={[
-                canSwitchToOffice && {
-                  key: "office",
-                  label: "Office",
-                  href: "/office",
-                  title: "Open Office portal",
-                },
-              ].filter(Boolean)}
-            />
             <nav className="op-nav">
+              <PortalSwitcher
+                items={[
+                  canSwitchToOffice && {
+                    key: "office",
+                    label: "Office",
+                    href: "/office",
+                    title: "Open Office portal",
+                  },
+                ].filter(Boolean)}
+              />
             {filterNav(NAV_ITEMS.slice(0, 6), user, "admin").map((item) => {
               const isActive = activeTab === item.key;
               const isHovered = hoveredNavKey === item.key;

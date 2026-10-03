@@ -7190,29 +7190,29 @@ case "all-drawings":
                 </svg>
               </button>
             </div>
-            <PortalSwitcher
-              items={[
-                canSwitchToAdmin && {
-                  key: "admin",
-                  label: "Admin",
-                  href: "/admin",
-                  title: "Open Admin portal",
-                },
-                canSwitchToMdo && {
-                  key: "mdo",
-                  label: "MDO",
-                  href: "/mdo",
-                  title: "Open MDO portal",
-                },
-                canSwitchToSite && {
-                  key: "site",
-                  label: "Site",
-                  href: "/site",
-                  title: "Open Site portal",
-                },
-              ].filter(Boolean)}
-            />
             <nav className="op-nav">
+              <PortalSwitcher
+                items={[
+                  canSwitchToAdmin && {
+                    key: "admin",
+                    label: "Admin",
+                    href: "/admin",
+                    title: "Open Admin portal",
+                  },
+                  canSwitchToMdo && {
+                    key: "mdo",
+                    label: "MDO",
+                    href: "/mdo",
+                    title: "Open MDO portal",
+                  },
+                  canSwitchToSite && {
+                    key: "site",
+                    label: "Site",
+                    href: "/site",
+                    title: "Open Site portal",
+                  },
+                ].filter(Boolean)}
+              />
               <span className="op-nav-section">Tasks</span>
             {filterNav(TASK_NAV.filter(
               (item) => item.key !== "delegated-tasks" || user?.role?.toLowerCase().trim() === "admin",

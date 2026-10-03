@@ -2849,6 +2849,9 @@ const [ticketDetail, setTicketDetail] = useState(null);
   );
   const [activeTab, setActiveTab] = useState("my-tasks");
   const [isDark, setIsDark] = useState(() => localStorage.getItem("theme") === "dark");
+  const [profileSiteFilter, setProfileSiteFilter] = useState("all"); // "all"|"weekly"|"monthly"|"custom"
+  const [profileDateFrom, setProfileDateFrom]   = useState("");
+  const [profileDateTo,   setProfileDateTo]     = useState("");
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   useEffect(() => {
     const theme = isDark ? "dark" : "light";
@@ -4302,6 +4305,7 @@ const myTaskActivityMaps = useMemo(
     ...TICKETS_NAV,
       VERIFIED_TASKS_ITEM,
   TASK_CORRECTIONS_ITEM,
+  OFFICE_PROFILE_ITEM,
   ].find((n) => n.key === activeTab);
 
   const proxyPendingCount = proxyLeaves.filter(
@@ -6498,6 +6502,620 @@ case "all-drawings":
         );
       }
 
+      case "profile": {
+        const today = new Date().toISOString().slice(0, 10);
+        const allT = allAssignedTasks;
+        const taskTotal     = allT.length;
+        const taskPending   = allT.filter(t => t.status === "pending" || t.status === "in_progress").length;
+        const taskDelayed   = allT.filter(t => t.due_date && t.due_date < today && t.status !== "completed" && t.status !== "not_applicable" && t.status !== "rejected").length;
+        const taskCompleted = allT.filter(t => t.status === "completed").length;
+
+        // Avatar helpers
+        const pName = user?.name || "";
+        const pInitials = pName.trim().split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() || "?";
+        const AVATAR_COLORS = ["#d97706","#7c3aed","#0284c7","#16a34a","#dc2626","#0891b2"];
+        let hash = 0;
+        for (let i = 0; i < pName.length; i++) hash = pName.charCodeAt(i) + ((hash << 5) - hash);
+        const pAvatarColor = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+
+        const sites = user?.site_names?.length
+          ? user.site_names.join("  |  ").toUpperCase()
+          : (user?.site_name || "Not Assigned").toUpperCase();
+
+        return (
+          <div className="op-profile-page">
+
+            {/* ── Identity Card ── */}
+            <div className="op-profile-identity-card">
+              {/* Avatar */}
+              <div className="op-profile-avatar-wrap" style={{ background: pAvatarColor, boxShadow: `0 0 0 5px ${pAvatarColor}30` }}>
+                {pInitials}
+              </div>
+
+              {/* Name + role */}
+              <div className="op-profile-name-block">
+                <div className="op-profile-fullname">{user?.name || "—"}</div>
+                <div className="op-profile-role">{user?.role || "Office Staff"}</div>
+
+                {/* Site pill */}
+                <div className="op-profile-site-pill">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                  {sites}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                </div>
+              </div>
+
+              {/* Chips row */}
+              <div className="op-profile-chips">
+                {user?.user_name && (
+                  <span className="op-profile-chip op-profile-chip-user">@{user.user_name}</span>
+                )}
+                {user?.department && (
+                  <span className="op-profile-chip op-profile-chip-dept">{user.department}</span>
+                )}
+              </div>
+            </div>
+
+            {/* ── Task Stats ── */}
+            <div className="op-profile-section">
+              <div className="op-profile-section-label">Task Overview</div>
+              <div className="op-stat-grid">
+                {[
+                  { label: "Assigned",  value: taskTotal,     cls: "op-stat-blue"  },
+                  { label: "Pending",   value: taskPending,   cls: "op-stat-amber" },
+                  { label: "Delayed",   value: taskDelayed,   cls: "op-stat-red"   },
+                  { label: "Completed", value: taskCompleted, cls: "op-stat-green" },
+                ].map(s => (
+                  <div key={s.label} className={`op-stat-card ${s.cls}`}>
+                    <div className="op-stat-value">{loadingTasks ? "—" : s.value}</div>
+                    <div className="op-stat-label">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Activity Charts ── */}
+            {(() => {
+              // ── Bar chart: tasks completed per week (last 6 weeks) ──────────
+              const weeks = Array.from({ length: 6 }, (_, i) => {
+                const end = new Date();
+                end.setDate(end.getDate() - i * 7);
+                const start = new Date(end);
+                start.setDate(start.getDate() - 6);
+                const label = `W${6 - i}`;
+                const count = allT.filter(t => {
+                  const d = t.completed_at || t.completion_date || t.updated_at;
+                  if (!d || t.status !== "completed") return false;
+                  const dt = new Date(d);
+                  return dt >= start && dt <= end;
+                }).length;
+                return { label, count };
+              }).reverse();
+
+              const maxWeek = Math.max(...weeks.map(w => w.count), 1);
+              const barW = 32, barGap = 14, chartH = 100, labelH = 20;
+              const svgW = weeks.length * (barW + barGap) - barGap + 20;
+
+              // ── Donut chart: breakdown by priority ──────────────────────────
+              const prioData = [
+                { label: "High",   color: "#dc2626", count: allT.filter(t => (t.priority || "").toLowerCase() === "high").length },
+                { label: "Medium", color: "#d97706", count: allT.filter(t => (t.priority || "").toLowerCase() === "medium" || !t.priority).length },
+                { label: "Low",    color: "#16a34a", count: allT.filter(t => (t.priority || "").toLowerCase() === "low").length },
+              ].filter(p => p.count > 0);
+
+              const prioTotal = prioData.reduce((s, p) => s + p.count, 0) || 1;
+              const cx = 70, cy = 70, r = 52, inner = 30;
+              let angle = -Math.PI / 2;
+              const slices = prioData.map(p => {
+                const sweep = (p.count / prioTotal) * 2 * Math.PI;
+                const x1 = cx + r * Math.cos(angle), y1 = cy + r * Math.sin(angle);
+                angle += sweep;
+                const x2 = cx + r * Math.cos(angle), y2 = cy + r * Math.sin(angle);
+                const xi1 = cx + inner * Math.cos(angle - sweep), yi1 = cy + inner * Math.sin(angle - sweep);
+                const xi2 = cx + inner * Math.cos(angle), yi2 = cy + inner * Math.sin(angle);
+                const large = sweep > Math.PI ? 1 : 0;
+                return {
+                  ...p,
+                  d: `M ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} L ${xi2} ${yi2} A ${inner} ${inner} 0 ${large} 0 ${xi1} ${yi1} Z`,
+                };
+              });
+
+              return (
+                <div className="op-charts-row">
+                  {/* Bar chart */}
+                  <div className="op-charts-col">
+                    <div className="op-profile-section-label">Weekly Completions — Last 6 Weeks</div>
+                    <div className="op-chart-card">
+                      {loadingTasks ? (
+                        <div className="op-chart-loading">Loading…</div>
+                      ) : (
+                        <svg width="100%" viewBox={`0 0 ${svgW + 10} ${chartH + labelH + 16}`} style={{ overflow: "visible" }}>
+                          {/* Grid lines */}
+                          {[0, 0.25, 0.5, 0.75, 1].map(frac => {
+                            const y = chartH - frac * chartH;
+                            return (
+                              <line key={frac} x1="10" x2={svgW + 10} y1={y} y2={y}
+                                stroke={isDark ? "#35434f" : "#e2e8f0"} strokeWidth="1" strokeDasharray="3 3" />
+                            );
+                          })}
+                          {/* Bars */}
+                          {weeks.map((w, i) => {
+                            const bh = Math.max(4, (w.count / maxWeek) * chartH);
+                            const x = 10 + i * (barW + barGap);
+                            const y = chartH - bh;
+                            return (
+                              <g key={w.label}>
+                                <rect x={x} y={y} width={barW} height={bh} rx="5"
+                                  fill="var(--portal-accent-middle, #7a2e00)" opacity="0.85" />
+                                {w.count > 0 && (
+                                  <text x={x + barW / 2} y={y - 5} textAnchor="middle"
+                                    fontSize="10" fontWeight="700"
+                                    fill={isDark ? "#a8b5bf" : "#475569"}>
+                                    {w.count}
+                                  </text>
+                                )}
+                                <text x={x + barW / 2} y={chartH + labelH} textAnchor="middle"
+                                  fontSize="10" fontWeight="600"
+                                  fill={isDark ? "#526170" : "#94a3b8"}>
+                                  {w.label}
+                                </text>
+                              </g>
+                            );
+                          })}
+                          {/* Axis */}
+                          <line x1="10" x2="10" y1="0" y2={chartH} stroke={isDark ? "#35434f" : "#e2e8f0"} strokeWidth="1" />
+                          <line x1="10" x2={svgW + 10} y1={chartH} y2={chartH} stroke={isDark ? "#35434f" : "#e2e8f0"} strokeWidth="1" />
+                        </svg>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Donut chart */}
+                  <div className="op-charts-col">
+                    <div className="op-profile-section-label">Tasks by Priority</div>
+                    <div className="op-chart-card op-chart-card-row">
+                      {loadingTasks ? (
+                        <div className="op-chart-loading">Loading…</div>
+                      ) : prioTotal === 0 || prioData.length === 0 ? (
+                        <div className="op-chart-loading">No task data yet</div>
+                      ) : (
+                        <>
+                          <svg width="140" height="140" viewBox="0 0 140 140" style={{ flexShrink: 0 }}>
+                            {slices.length === 1 ? (
+                              <circle cx={cx} cy={cy} r={r} fill={slices[0].color} />
+                            ) : (
+                              slices.map((s, i) => (
+                                <path key={i} d={s.d} fill={s.color} opacity="0.9" />
+                              ))
+                            )}
+                            {/* Inner hole */}
+                            <circle cx={cx} cy={cy} r={inner} fill={isDark ? "#19242e" : "#fff"} />
+                            {/* Center label */}
+                            <text x={cx} y={cy - 6} textAnchor="middle" fontSize="18" fontWeight="800"
+                              fill={isDark ? "#e5edf2" : "#1e293b"}>
+                              {prioTotal}
+                            </text>
+                            <text x={cx} y={cy + 10} textAnchor="middle" fontSize="8" fontWeight="700"
+                              fill={isDark ? "#526170" : "#94a3b8"} letterSpacing="0.05em">
+                              TOTAL
+                            </text>
+                          </svg>
+                          <div className="op-donut-legend">
+                            {prioData.map(p => (
+                              <div key={p.label} className="op-donut-legend-row">
+                                <span className="op-donut-dot" style={{ background: p.color }} />
+                                <span className="op-donut-legend-label">{p.label}</span>
+                                <span className="op-donut-legend-count">{p.count}</span>
+                                <span className="op-donut-legend-pct">
+                                  {Math.round((p.count / prioTotal) * 100)}%
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Performance Score ── */}
+            {(() => {
+              const total     = allAssignedTasks.length;
+              const completed = allAssignedTasks.filter(t => t.status === "completed").length;
+              const score     = total > 0 ? Math.round((completed / total) * 100) : 0;
+              const scoreColor =
+                score >= 80 ? "#16a34a" :
+                score >= 50 ? "#d97706" : "#dc2626";
+              const scoreBg =
+                score >= 80 ? "#f0fdf4" :
+                score >= 50 ? "#fffbeb" : "#fef2f2";
+              const scoreBorder =
+                score >= 80 ? "#bbf7d0" :
+                score >= 50 ? "#fde68a" : "#fecaca";
+              const grade =
+                score >= 90 ? "Excellent" :
+                score >= 75 ? "Good" :
+                score >= 50 ? "Average" : "Needs Improvement";
+
+              // Arc geometry
+              const R = 54, cx = 80, cy = 80;
+              const startAngle = Math.PI * 0.75;
+              const endAngle   = Math.PI * 2.25;
+              const totalArc   = endAngle - startAngle;
+              const fillArc    = (score / 100) * totalArc;
+              const toXY = (a) => [cx + R * Math.cos(a), cy + R * Math.sin(a)];
+              const [bx1, by1] = toXY(startAngle);
+              const [bx2, by2] = toXY(endAngle);
+              const [fx1, fy1] = toXY(startAngle);
+              const [fx2, fy2] = toXY(startAngle + fillArc);
+              const largeBg   = totalArc > Math.PI ? 1 : 0;
+              const largeFill = fillArc > Math.PI ? 1 : 0;
+
+              return (
+                <div className="op-profile-section">
+                  <div className="op-profile-section-label">Performance Score</div>
+                  <div className="op-chart-card op-perf-card" style={{ background: scoreBg, borderColor: scoreBorder }}>
+                    {/* Arc gauge */}
+                    <svg width="160" height="120" viewBox="0 0 160 120" style={{ flexShrink: 0 }}>
+                      {/* Track */}
+                      <path
+                        d={`M ${bx1} ${by1} A ${R} ${R} 0 ${largeBg} 1 ${bx2} ${by2}`}
+                        fill="none" stroke={scoreBorder} strokeWidth="10" strokeLinecap="round"
+                      />
+                      {/* Fill */}
+                      {score > 0 && (
+                        <path
+                          d={`M ${fx1} ${fy1} A ${R} ${R} 0 ${largeFill} 1 ${fx2} ${fy2}`}
+                          fill="none" stroke={scoreColor} strokeWidth="10" strokeLinecap="round"
+                        />
+                      )}
+                      {/* Score text */}
+                      <text x={cx} y={cy + 10} textAnchor="middle" fontSize="26" fontWeight="800"
+                        fill={scoreColor} fontFamily="'DM Mono', monospace">
+                        {score}%
+                      </text>
+                    </svg>
+
+                    {/* Right side details */}
+                    <div className="op-perf-details">
+                      <div className="op-perf-grade" style={{ color: scoreColor }}>{grade}</div>
+                      <div className="op-perf-row">
+                        <span className="op-perf-key">Tasks Assigned</span>
+                        <span className="op-perf-val" style={{ color: "#1d4ed8" }}>{total}</span>
+                      </div>
+                      <div className="op-perf-row">
+                        <span className="op-perf-key">Completed</span>
+                        <span className="op-perf-val" style={{ color: "#15803d" }}>{completed}</span>
+                      </div>
+                      <div className="op-perf-row">
+                        <span className="op-perf-key">Remaining</span>
+                        <span className="op-perf-val" style={{ color: "#d97706" }}>{total - completed}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Site-wise Task Breakdown ── */}
+            {(() => {
+              const today = new Date();
+              const todayStr = today.toISOString().slice(0, 10);
+
+              const filterTask = (t) => {
+                const d = t.created_at ? t.created_at.slice(0, 10) : null;
+                if (profileSiteFilter === "weekly") {
+                  const weekAgo = new Date(today); weekAgo.setDate(today.getDate() - 7);
+                  return d && d >= weekAgo.toISOString().slice(0, 10);
+                }
+                if (profileSiteFilter === "monthly") {
+                  const moAgo = new Date(today); moAgo.setDate(today.getDate() - 30);
+                  return d && d >= moAgo.toISOString().slice(0, 10);
+                }
+                if (profileSiteFilter === "custom") {
+                  if (profileDateFrom && d && d < profileDateFrom) return false;
+                  if (profileDateTo   && d && d > profileDateTo)   return false;
+                  return true;
+                }
+                return true; // "all"
+              };
+
+              const filtered = allAssignedTasks.filter(filterTask);
+
+              // Group by site
+              const siteMap = {};
+              filtered.forEach(t => {
+                const site = t.site_name || "No Site";
+                if (!siteMap[site]) siteMap[site] = { assigned: 0, pending: 0, delayed: 0, completed: 0 };
+                siteMap[site].assigned++;
+                if (t.status === "completed") siteMap[site].completed++;
+                else if (t.due_date && t.due_date < todayStr) siteMap[site].delayed++;
+                else siteMap[site].pending++;
+              });
+
+              const rows = Object.entries(siteMap).sort((a, b) => b[1].assigned - a[1].assigned);
+
+              const totalRow = {
+                assigned:  rows.reduce((s, [, c]) => s + c.assigned,  0),
+                pending:   rows.reduce((s, [, c]) => s + c.pending,   0),
+                delayed:   rows.reduce((s, [, c]) => s + c.delayed,   0),
+                completed: rows.reduce((s, [, c]) => s + c.completed, 0),
+              };
+
+              // Build a readable period label for the PDF
+              const periodLabel =
+                profileSiteFilter === "weekly"  ? "This Week" :
+                profileSiteFilter === "monthly" ? "This Month" :
+                profileSiteFilter === "custom"  ?
+                  `${profileDateFrom || "—"} to ${profileDateTo || "—"}` :
+                  "All Time";
+
+              const handleDownloadPdf = async () => {
+                const { default: jsPDF } = await import("jspdf");
+                const { default: autoTable } = await import("jspdf-autotable");
+
+                const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+                const accentColor = [122, 46, 0]; // #7a2e00
+
+                // Header
+                doc.setFillColor(...accentColor);
+                doc.rect(0, 0, 210, 22, "F");
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(14); doc.setFont("helvetica", "bold");
+                doc.text("Site-wise Task Breakdown", 14, 14);
+                doc.setFontSize(9); doc.setFont("helvetica", "normal");
+                doc.text(`Generated: ${new Date().toLocaleDateString("en-IN", { day:"numeric", month:"short", year:"numeric" })}   Period: ${periodLabel}   Employee: ${user?.name || ""}`, 14, 19);
+
+                // Summary row
+                doc.setTextColor(30, 41, 59);
+                doc.setFontSize(9); doc.setFont("helvetica", "normal");
+                doc.text(`Total tasks in period: ${totalRow.assigned}   Completed: ${totalRow.completed}   Pending: ${totalRow.pending}   Delayed: ${totalRow.delayed}`, 14, 30);
+
+                autoTable(doc, {
+                  startY: 35,
+                  head: [["Site", "Assigned", "Pending", "Delayed", "Completed"]],
+                  body: [
+                    ...rows.map(([site, c]) => [site, c.assigned, c.pending, c.delayed, c.completed]),
+                    ...(rows.length > 1 ? [["Total", totalRow.assigned, totalRow.pending, totalRow.delayed, totalRow.completed]] : []),
+                  ],
+                  headStyles: { fillColor: accentColor, textColor: 255, fontStyle: "bold", fontSize: 9 },
+                  bodyStyles: { fontSize: 9, textColor: [30, 41, 59] },
+                  columnStyles: {
+                    0: { cellWidth: 70, fontStyle: "bold" },
+                    1: { halign: "center" },
+                    2: { halign: "center" },
+                    3: { halign: "center", textColor: [220, 38, 38] },
+                    4: { halign: "center", textColor: [22, 163, 74] },
+                  },
+                  alternateRowStyles: { fillColor: [248, 250, 252] },
+                  foot: [],
+                  didDrawRow: (data) => {
+                    if (data.row.index === rows.length - 1 && rows.length > 1) {
+                      // total row — bold
+                      doc.setFont("helvetica", "bold");
+                    }
+                  },
+                });
+
+                doc.save(`site-task-report-${todayStr}.pdf`);
+              };
+
+              return (
+                <div className="op-profile-section">
+                  <div className="op-profile-section-label">Site-wise Task Breakdown</div>
+                  <div className="op-chart-card" style={{ padding: 0, overflow: "hidden" }}>
+
+                    {/* ── Filter bar ── */}
+                    <div className="op-site-filter-bar">
+                      {/* Preset pills */}
+                      <div className="op-site-filter-pills">
+                        {[
+                          { key: "all",     label: "All Time"   },
+                          { key: "monthly", label: "This Month" },
+                          { key: "weekly",  label: "This Week"  },
+                          { key: "custom",  label: "Custom"     },
+                        ].map(f => (
+                          <button key={f.key} type="button"
+                            className={`op-site-filter-btn${profileSiteFilter === f.key ? " active" : ""}`}
+                            onClick={() => setProfileSiteFilter(f.key)}>
+                            {f.label}
+                          </button>
+                        ))}
+                      </div>
+
+                      {/* Date range — shown only on custom */}
+                      {profileSiteFilter === "custom" && (
+                        <div className="op-site-date-range">
+                          <div className="op-site-date-field">
+                            <label className="op-site-date-label">From</label>
+                            <input type="date" className="op-site-date-input"
+                              value={profileDateFrom}
+                              max={profileDateTo || todayStr}
+                              onChange={e => setProfileDateFrom(e.target.value)} />
+                          </div>
+                          <span className="op-site-date-sep">→</span>
+                          <div className="op-site-date-field">
+                            <label className="op-site-date-label">To</label>
+                            <input type="date" className="op-site-date-input"
+                              value={profileDateTo}
+                              min={profileDateFrom}
+                              max={todayStr}
+                              onChange={e => setProfileDateTo(e.target.value)} />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* PDF download button */}
+                      <button type="button" className="op-site-pdf-btn"
+                        disabled={rows.length === 0}
+                        onClick={handleDownloadPdf}
+                        title="Download as PDF">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                          <polyline points="7 10 12 15 17 10"/>
+                          <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        PDF
+                      </button>
+                    </div>
+
+                    {/* ── Table ── */}
+                    {rows.length === 0 ? (
+                      <div className="op-chart-loading" style={{ padding: "24px 0" }}>No tasks for this period</div>
+                    ) : (
+                      <div className="op-site-table-wrap">
+                        <table className="op-site-table">
+                          <thead>
+                            <tr>
+                              <th>Site</th>
+                              <th>Assigned</th>
+                              <th>Pending</th>
+                              <th>Delayed</th>
+                              <th>Completed</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rows.map(([site, c]) => (
+                              <tr key={site}>
+                                <td className="op-site-name-cell">{site}</td>
+                                <td><span className="op-site-badge op-site-blue">{c.assigned}</span></td>
+                                <td><span className="op-site-badge op-site-amber">{c.pending}</span></td>
+                                <td><span className="op-site-badge op-site-red">{c.delayed}</span></td>
+                                <td><span className="op-site-badge op-site-green">{c.completed}</span></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          {rows.length > 1 && (
+                            <tfoot>
+                              <tr className="op-site-total-row">
+                                <td>Total</td>
+                                <td>{totalRow.assigned}</td>
+                                <td>{totalRow.pending}</td>
+                                <td>{totalRow.delayed}</td>
+                                <td>{totalRow.completed}</td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── Leave Summary ── */}
+            {(() => {
+              const today = new Date().toISOString().slice(0, 10);
+              const fmtD  = (d) => d ? new Date(d + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : "—";
+              const calcDays = (l) => (l.from_date && l.to_date)
+                ? Math.ceil((new Date(l.to_date) - new Date(l.from_date)) / 86400000) + 1
+                : 1;
+
+              const approvedLeaves = myLeaves.filter(l => {
+                const s = computeLeaveStatus(l);
+                return s === "approved";
+              });
+
+              const upcomingLeaves = approvedLeaves.filter(l => l.from_date >= today);
+              const pastLeaves     = approvedLeaves.filter(l => l.from_date < today);
+              const totalDaysTaken = pastLeaves.reduce((s, l) => s + calcDays(l), 0);
+
+              // Group past leaves by type
+              const byType = {};
+              pastLeaves.forEach(l => {
+                byType[l.leave_type] = (byType[l.leave_type] || 0) + calcDays(l);
+              });
+              const typeEntries = Object.entries(byType).sort((a, b) => b[1] - a[1]);
+
+              const LEAVE_COLORS = {
+                "Casual Leave":       "#d97706",
+                "Sick Leave":         "#dc2626",
+                "Earned Leave":       "#16a34a",
+                "Maternity Leave":    "#7e22ce",
+                "Paternity Leave":    "#1d4ed8",
+                "Compensatory Leave": "#c2410c",
+                "Unpaid Leave":       "#475569",
+              };
+
+              return (
+                <div className="op-profile-section">
+                  <div className="op-profile-section-label">Leave Summary</div>
+
+                  {/* Taken till date */}
+                  <div className="op-chart-card" style={{ marginBottom: 12 }}>
+                    <div className="op-leave-taken-header">
+                      <div>
+                        <div className="op-leave-taken-count">{totalDaysTaken}</div>
+                        <div className="op-leave-taken-sub">leaves taken till date</div>
+                      </div>
+                      {typeEntries.length > 0 && (
+                        <div className="op-leave-type-list">
+                          {typeEntries.map(([type, days]) => (
+                            <div key={type} className="op-leave-type-row">
+                              <span className="op-leave-type-dot" style={{ background: LEAVE_COLORS[type] || "#64748b" }} />
+                              <span className="op-leave-type-name">{type}</span>
+                              <span className="op-leave-type-days"
+                                style={{ color: LEAVE_COLORS[type] || "#64748b" }}>
+                                {days}d
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {typeEntries.length === 0 && (
+                        <div className="op-leave-empty">No approved leaves taken yet</div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Upcoming approved leaves */}
+                  <div className="op-profile-section-label" style={{ marginBottom: 8 }}>
+                    Upcoming Approved Leaves
+                  </div>
+                  {upcomingLeaves.length === 0 ? (
+                    <div className="op-leave-empty-card">No upcoming approved leaves</div>
+                  ) : (
+                    <div className="op-upcoming-leaves">
+                      {upcomingLeaves.map(l => {
+                        const days = calcDays(l);
+                        const color = LEAVE_COLORS[l.leave_type] || "#64748b";
+                        return (
+                          <div key={l.id} className="op-upcoming-leave-card" style={{ borderLeftColor: color }}>
+                            <div className="op-upcoming-leave-top">
+                              <span className="op-upcoming-leave-type" style={{ color }}>{l.leave_type}</span>
+                              <span className="op-upcoming-leave-days" style={{ color }}>
+                                {days} day{days !== 1 ? "s" : ""}
+                              </span>
+                            </div>
+                            <div className="op-upcoming-leave-dates">
+                              {fmtD(l.from_date)}
+                              {l.from_date !== l.to_date && <> → {fmtD(l.to_date)}</>}
+                            </div>
+                            {l.reason && (
+                              <div className="op-upcoming-leave-reason">{l.reason}</div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
+          </div>
+        );
+      }
+
       default:
         return null;
     }
@@ -6749,12 +7367,14 @@ case "all-drawings":
                 onClick={() => handleNavClick("report-submissions")}
               />
             )}
+
             </nav>
             <div className="op-sidebar-footer">
               <PortalSettingsMenu
                 user={user}
                 isDark={isDark}
                 onThemeToggle={() => setIsDark((current) => !current)}
+                onProfileClick={() => { setActiveTab("profile"); if (typeof window !== "undefined" && window.innerWidth <= 760) setSidebarOpen(false); }}
               />
             </div>
           </aside>

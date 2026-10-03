@@ -252,8 +252,12 @@ export default function PortalSettingsMenu({
               }}
             >
               <MenuIcon>
-                <path d="M12 3v2m0 14v2M5.6 5.6 7 7m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17m10-10 1.4-1.4" />
-                <circle cx="12" cy="12" r="4" />
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="4" y1="12" x2="20" y2="12" />
+                <line x1="4" y1="18" x2="20" y2="18" />
+                <circle cx="9" cy="6" r="2.5" fill="currentColor" stroke="none" />
+                <circle cx="15" cy="12" r="2.5" fill="currentColor" stroke="none" />
+                <circle cx="9" cy="18" r="2.5" fill="currentColor" stroke="none" />
               </MenuIcon>
               <span>Personalization</span>
             </button>

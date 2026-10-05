@@ -2616,24 +2616,174 @@ function MaterialPanel({ user, onClose }) {
           <label className="pf-mat-field">
             Bill photo
             <span className="pf-mat-optional">Optional</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={(event) => {
-                const file = event.target.files?.[0] || null;
-                if (billPreviewRef.current) URL.revokeObjectURL(billPreviewRef.current);
-                if (!file) {
-                  billPreviewRef.current = "";
-                  setBillFile(null);
-                  setBillPreview("");
-                  return;
-                }
-                const url = URL.createObjectURL(file);
-                billPreviewRef.current = url;
-                setBillFile(file);
-                setBillPreview(url);
-              }}
-            />
+            <div style={{ position: "relative" }}>
+              <button
+                type="button"
+                className="pf-mat-upload-btn"
+                onClick={(e) => {
+                  e.preventDefault();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const menu = document.createElement("div");
+                  menu.className = "pf-mat-upload-menu";
+                  menu.style.cssText = `
+                    position: fixed;
+                    top: ${rect.bottom + 8}px;
+                    left: ${rect.left}px;
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+                    z-index: 9999;
+                    min-width: 200px;
+                  `;
+                  
+                  const fileOption = document.createElement("button");
+                  fileOption.type = "button";
+                  fileOption.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; margin-right: 8px; vertical-align: middle;">
+                      <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path>
+                      <polyline points="17 21 17 13 7 13 7 21"></polyline>
+                      <polyline points="7 3 7 8 15 8"></polyline>
+                    </svg>
+                    Choose from Device
+                  `;
+                  fileOption.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    width: 100%;
+                    text-align: left;
+                    padding: 12px 16px;
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    font-size: 14px;
+                    color: #0f172a;
+                    border-bottom: 1px solid #e2e8f0;
+                    transition: background 0.15s;
+                  `;
+                  fileOption.onmouseover = () => fileOption.style.background = "#f8fafc";
+                  fileOption.onmouseout = () => fileOption.style.background = "transparent";
+                  fileOption.onclick = () => {
+                    document.body.removeChild(menu);
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.accept = "image/*";
+                    input.onchange = (evt) => {
+                      const file = evt.target.files?.[0] || null;
+                      if (billPreviewRef.current) URL.revokeObjectURL(billPreviewRef.current);
+                      if (!file) {
+                        billPreviewRef.current = "";
+                        setBillFile(null);
+                        setBillPreview("");
+                        return;
+                      }
+                      const url = URL.createObjectURL(file);
+                      billPreviewRef.current = url;
+                      setBillFile(file);
+                      setBillPreview(url);
+                    };
+                    input.click();
+                  };
+                  
+                  const cameraOption = document.createElement("button");
+                  cameraOption.type = "button";
+                  cameraOption.innerHTML = `
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display: inline-block; margin-right: 8px; vertical-align: middle;">
+                      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                      <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                    Capture from Camera
+                  `;
+                  cameraOption.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    width: 100%;
+                    text-align: left;
+                    padding: 12px 16px;
+                    border: none;
+                    background: transparent;
+                    cursor: pointer;
+                    font-size: 14px;
+                    color: #0f172a;
+                    transition: background 0.15s;
+                  `;
+                  cameraOption.onmouseover = () => cameraOption.style.background = "#f8fafc";
+                  cameraOption.onmouseout = () => cameraOption.style.background = "transparent";
+                  cameraOption.onclick = async () => {
+                    document.body.removeChild(menu);
+                    try {
+                      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+                      const video = document.createElement("video");
+                      video.srcObject = stream;
+                      video.style.width = "100%";
+                      video.style.height = "100%";
+                      video.style.objectFit = "cover";
+                      video.play();
+                      const canvas = document.createElement("canvas");
+                      const modal = document.createElement("div");
+                      modal.style.cssText = "position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 99999;";
+                      modal.appendChild(video);
+                      const btnContainer = document.createElement("div");
+                      btnContainer.style.cssText = "margin-top: 20px; display: flex; gap: 12px;";
+                      const captureBtn = document.createElement("button");
+                      captureBtn.type = "button";
+                      captureBtn.textContent = "Capture";
+                      captureBtn.style.cssText = "padding: 10px 24px; background: #16a34a; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;";
+                      const cancelBtn = document.createElement("button");
+                      cancelBtn.type = "button";
+                      cancelBtn.textContent = "Cancel";
+                      cancelBtn.style.cssText = "padding: 10px 24px; background: #64748b; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px;";
+                      btnContainer.appendChild(captureBtn);
+                      btnContainer.appendChild(cancelBtn);
+                      modal.appendChild(btnContainer);
+                      document.body.appendChild(modal);
+                      video.style.maxHeight = "calc(100vh - 100px)";
+                      captureBtn.onclick = () => {
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const ctx = canvas.getContext("2d");
+                        ctx.drawImage(video, 0, 0);
+                        canvas.toBlob((blob) => {
+                          const file = new File([blob], `bill-${Date.now()}.jpg`, { type: "image/jpeg" });
+                          const url = URL.createObjectURL(file);
+                          if (billPreviewRef.current) URL.revokeObjectURL(billPreviewRef.current);
+                          billPreviewRef.current = url;
+                          setBillFile(file);
+                          setBillPreview(url);
+                          stream.getTracks().forEach(t => t.stop());
+                          document.body.removeChild(modal);
+                        });
+                      };
+                      cancelBtn.onclick = () => {
+                        stream.getTracks().forEach(t => t.stop());
+                        document.body.removeChild(modal);
+                      };
+                    } catch (err) {
+                      alert("Camera access denied or not available");
+                    }
+                  };
+                  
+                  menu.appendChild(fileOption);
+                  menu.appendChild(cameraOption);
+                  document.body.appendChild(menu);
+                  
+                  const closeMenu = (e) => {
+                    if (!menu.contains(e.target) && e.target !== e.currentTarget?.closest(".pf-mat-upload-btn")) {
+                      document.removeEventListener("click", closeMenu);
+                      if (document.body.contains(menu)) document.body.removeChild(menu);
+                    }
+                  };
+                  setTimeout(() => document.addEventListener("click", closeMenu), 0);
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ display: "inline-block", marginRight: "8px", verticalAlign: "middle" }}>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                Upload Document
+              </button>
+            </div>
             {billPreview && <img className="pf-mat-bill-preview" src={billPreview} alt="Selected bill" />}
           </label>
         )}

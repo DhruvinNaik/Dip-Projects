@@ -42,10 +42,9 @@ const TASK_NAV = [
       label: "Tasks History",
       icon: (
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M4 5h16M4 12h16M4 19h16" />
-          <circle cx="7" cy="5" r="1" fill="#2563eb" />
-          <circle cx="7" cy="12" r="1" fill="#2563eb" />
-          <circle cx="7" cy="19" r="1" fill="#2563eb" />
+          <circle cx="12" cy="12" r="9" />
+          <polyline points="12 7 12 12 15.5 14" />
+          <path d="M3.05 11a9 9 0 0 1 1.6-4.55" strokeDasharray="2 2" />
         </svg>
       ),
     },
@@ -1116,9 +1115,10 @@ function TaskActionMenu({
   {
     key: "hold",
     label: isHeld ? "Continue Task" : "Hold Task",
+    hidden: hasPendingVerification,
     color: isHeld ? "#2563eb" : "#d97706",
     bg: isHeld ? "#eff6ff" : "#fffbeb",
-    onClick: () => (isHeld ? onContinue(task) : onHold(task)),
+    onClick: () => isHeld ? onContinue(task) : onHold(task),
     icon: isHeld ? (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <polygon points="5 3 19 12 5 21 5 3" />
@@ -1168,7 +1168,7 @@ function TaskActionMenu({
 
   return (
     <div ref={ref} style={{ position: "relative", display: "flex", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-      {isHeld && (
+      {isHeld && !hasPendingVerification && (
         <span
           style={{
             display: "inline-flex",
@@ -1214,7 +1214,7 @@ function TaskActionMenu({
             zIndex: 9999,
           }}
         >
-          {items.map((item) => {
+          {items.filter((item) => !item.hidden).map((item) => {
             const hovered = hoveredKey === item.key && !item.disabled;
             return (
               <button
@@ -1479,10 +1479,17 @@ function TaskHistoryTable({
   const STOPPED_STATUSES = ["completed", "not_applicable"];
   const formatHours = (task) => {
     let seconds = Number(task.accumulated_seconds) || 0;
-    // Only keep the live clock running while the task is actually
-    // active — accepted, not held, and not in a terminal status.
+    // For active tasks, add live elapsed time since last start.
     if (task.accepted_at && !task.is_held && !STOPPED_STATUSES.includes(task.status)) {
       seconds += Math.max(0, Math.floor((Date.now() - new Date(task.resumed_at || task.accepted_at)) / 1000));
+    }
+    // For completed tasks where accumulated_seconds was never flushed,
+    // fall back to total span: accepted_at → completed_at.
+    if (seconds <= 0 && task.status === "completed" && task.accepted_at) {
+      const end = task.completed_at || task.completed_date || task.completion_date;
+      if (end) {
+        seconds = Math.max(0, Math.floor((new Date(end) - new Date(task.accepted_at)) / 1000));
+      }
     }
     if (seconds <= 0) return "—";
     if (seconds < 3600) return `${Math.round(seconds / 60)} min`;
@@ -1519,8 +1526,7 @@ function TaskHistoryTable({
             const priority = PRIORITY_STYLES[task.priority] || PRIORITY_STYLES.medium;
             const status = statusFor(task);
             const statusStyle = STATUS_STYLES[task.status] || STATUS_STYLES.pending;
-            const completedDate = task.completed_at || task.completed_date || task.completion_date || (task.status === "completed" ? task.updated_at : null);
-            const isPending = task.status === "pending" && !task.accepted_at;
+            const completedDate = task.completed_at || task.completed_date || task.completion_date || null;
             return (
               <tr key={task.id} className="tt-row" onClick={() => onDetailClick?.(task)}>
                 <td className="tt-title-cell">
@@ -1555,7 +1561,9 @@ function TaskHistoryTable({
                     <span style={{ color: "#16a34a", fontSize: 11.5, fontWeight: 700 }}>✓ Completed</span>
                   ) : task.status === "not_applicable" ? (
                     <span style={{ color: "#94a3b8", fontSize: 11.5, fontWeight: 600 }}>— Not Applicable</span>
-                  ) : isPending ? (
+                  ) : task.status === "rejected" ? (
+                    <span style={{ color: "#dc2626", fontSize: 11.5, fontWeight: 600 }}>✕ Rejected</span>
+                  ) : (
                     <TaskActionMenu
                       task={task}
                       onAccept={onAccept}
@@ -1565,10 +1573,6 @@ function TaskHistoryTable({
                       onSendVerification={onSendVerification}
                       onRaiseTicket={onRaiseTicket}
                     />
-                  ) : (
-                    <span style={{ color: "#64748b", fontSize: 11.5, fontWeight: 600 }}>
-                      {task.is_held ? "On hold" : "In progress"}
-                    </span>
                   )}
                 </td>
               </tr>
@@ -3337,13 +3341,35 @@ useEffect(() => {
     if (!u) return;
     setLoadingTasks(true);
 
-    const { data: mineAll } = await supabase
-      .from("tasks")
-      .select("*")
-      .eq("assigned_to", u.user_name)
-      .order("created_at", { ascending: false });
+    const [{ data: mineAll }, { data: verifications }] = await Promise.all([
+      supabase
+        .from("tasks")
+        .select("*")
+        .eq("assigned_to", u.user_name)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("task_verifications")
+        .select("task_id, resolved_at")
+        .eq("sent_by", u.user_name)
+        .eq("status", "completed")
+        .not("resolved_at", "is", null),
+    ]);
 
-    const mine = mineAll || [];
+    // Build a map: task_id → resolved_at from the verification record.
+    // This is the authoritative "completed by admin" timestamp.
+    const verifiedAtMap = {};
+    (verifications || []).forEach((v) => {
+      if (v.task_id && v.resolved_at) verifiedAtMap[v.task_id] = v.resolved_at;
+    });
+
+    // Merge verified_at onto each task so the history table can display it.
+    // If the task already has completed_at (set after the code fix), keep it.
+    // If not, fall back to the verification's resolved_at.
+    const mine = (mineAll || []).map((t) => ({
+      ...t,
+      completed_at: t.completed_at || verifiedAtMap[t.id] || null,
+    }));
+
     setAllAssignedTasks(mine);
     setMyTasks(mine.filter((t) => !isRecurringTask(t)));
     setRecurringTasks(
@@ -4404,7 +4430,9 @@ case "recurring-tasks":
       onDetailClick={(task) => setDetailTask(task)}
     />
   );
-case "all-tasks":
+case "all-tasks": {
+  const filteredAllTasks = applyFilters(allAssignedTasks, allTaskFilters);
+  const hasActiveAllTaskFilters = Object.values(allTaskFilters).some((v) => v !== "");
   return (
     <>
       {loadingTasks ? (
@@ -4412,13 +4440,17 @@ case "all-tasks":
           <div className="op-spinner" />
           <p className="op-empty-text">Loading tasks…</p>
         </div>
-      ) : applyFilters(allAssignedTasks, allTaskFilters).length === 0 ? (
+      ) : filteredAllTasks.length === 0 ? (
         <div className="op-empty-state">
-          <p className="op-empty-text">No tasks match the current filters.</p>
+          <p className="op-empty-text">
+            {hasActiveAllTaskFilters
+              ? "No tasks match the current filters."
+              : "No tasks have been assigned to you yet."}
+          </p>
         </div>
       ) : (
         <TaskHistoryTable
-          tasks={applyFilters(allAssignedTasks, allTaskFilters)}
+          tasks={filteredAllTasks}
           onDetailClick={(task) => setDetailTask(task)}
           onSendVerification={handleSendVerification}
           onRaiseTicket={handleRaiseTicket}
@@ -4433,6 +4465,7 @@ case "all-tasks":
       )}
     </>
   );
+}
   case "apply-leave":
         return (
           <div className="lv-form-wrap">

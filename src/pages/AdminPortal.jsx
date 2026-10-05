@@ -1,6 +1,8 @@
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import Navbar from "../components/Navbar";
 import PortalFloaters from "../components/PortalFloaters";
+import PortalSettingsMenu from "../components/PortalSettingsMenu";
+import PortalSwitcher from "../components/PortalSwitcher";
 import { supabase } from "../supabase";
 import { useRecurringTasks } from "../hooks/useRecurringTasks";
 import SiteReport from "./Sitereport";
@@ -12,7 +14,6 @@ import { canAccessPortal, filterNav, getAllowedKeys, isAdminUser } from "../acce
 import { pickPermissionFields } from "../lib/permissions";
 import OrgHierarchy from "./OrgHierarchy";
 import PermissionsPanel from "../components/PermissionsPanel";
-import PortalSwitcher from "../components/PortalSwitcher";
 import {
   TaskForm as TaskFormWithCheckpoints,
   EMPTY_FORM,
@@ -261,6 +262,18 @@ const NAV_ITEMS = [
     ),
   },
 ];
+
+const ADMIN_PROFILE_ITEM = {
+  key: "profile",
+  label: "Profile",
+  color: "#be3d3d",
+  icon: (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#bd3c0a" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="4" />
+      <path d="M5 21a7 7 0 0 1 14 0" />
+    </svg>
+  ),
+};
 
 const REPORTS_NAV = [
   {
@@ -5934,9 +5947,20 @@ export default function AdminPortal() {
   const [showRecurringInAllTasks, setShowRecurringInAllTasks] = useState(false);
   const [user, setUser] = useState(null);
   const canSwitchToOffice = canAccessPortal(user, "office");
+  const [isDark, setIsDark] = useState(() => localStorage.getItem("theme") === "dark");
+  const [profileSiteFilter, setProfileSiteFilter] = useState("all");
+  const [profileDateFrom, setProfileDateFrom] = useState("");
+  const [profileDateTo, setProfileDateTo] = useState("");
+  const [profileDeptFilter, setProfileDeptFilter] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(() =>
     typeof window === "undefined" ? true : window.innerWidth > 760,
   );
+
+  useEffect(() => {
+    const theme = isDark ? "dark" : "light";
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("theme", theme);
+  }, [isDark]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -7798,7 +7822,10 @@ if (!error && verification.task_id) {
   const task = allTasks.find((t) => t.id === verification.task_id);
   const table = task?._source === "instance" ? "recurring_task_instances" : "tasks";
 
-  await supabase.from(table).update({ status: "completed" }).eq("id", verification.task_id);
+  await supabase
+    .from(table)
+    .update({ status: "completed", completed_at: new Date().toISOString() })
+    .eq("id", verification.task_id);
 
   if (table === "tasks") {
     await activateQueuedTask(supabase, verification.task_id, userMap, (msg) => showToast("success", msg));
@@ -8014,6 +8041,7 @@ if (!error && verification.task_id) {
     ...INSIGHTS_NAV,
     ...VERIFICATION_NAV,
     ...TICKETS_NAV,
+    ADMIN_PROFILE_ITEM,
   ].find((n) => n.key === activeTab);
 
   const pending = allTasks.filter((t) => t.status === "pending").length;
@@ -11889,7 +11917,7 @@ case "mis-report":
                               })
                             }
                           >
-                            Save Changes
+                            Reschedule
                           </button>
                         </td>
                       </tr>
@@ -12275,6 +12303,76 @@ case "all-drawings":
       )}
     </div>
   );
+      case "profile": {
+        const today = new Date().toISOString().slice(0, 10);
+        const taskTotal     = allTasks.length;
+        const taskPending   = allTasks.filter(t => t.status === "pending" || t.status === "in_progress").length;
+        const taskDelayed   = allTasks.filter(t => t.due_date && t.due_date < today && t.status !== "completed" && t.status !== "not_applicable" && t.status !== "rejected").length;
+        const taskCompleted = allTasks.filter(t => t.status === "completed").length;
+
+        const pName = user?.name || "";
+        const pInitials = pName.trim().split(" ").map(w => w[0]).slice(0, 2).join("").toUpperCase() || "?";
+        const AVATAR_COLORS = ["#d97706","#7c3aed","#0284c7","#16a34a","#dc2626","#0891b2"];
+        let hash = 0;
+        for (let i = 0; i < pName.length; i++) hash = pName.charCodeAt(i) + ((hash << 5) - hash);
+        const pAvatarColor = AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
+
+        const sites = user?.site_names?.length
+          ? user.site_names.join("  |  ").toUpperCase()
+          : (user?.site_name || "Not Assigned").toUpperCase();
+
+        return (
+          <div className="op-profile-page">
+            {/* ── Identity Card ── */}
+            <div className="op-profile-identity-card">
+              <div className="op-profile-avatar-wrap" style={{ background: pAvatarColor, boxShadow: `0 0 0 5px ${pAvatarColor}30` }}>
+                {pInitials}
+              </div>
+              <div className="op-profile-name-block">
+                <div className="op-profile-fullname">{user?.name || "—"}</div>
+                <div className="op-profile-role">{user?.role || "Admin"}</div>
+                <div className="op-profile-site-pill">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                  {sites}
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+                    <polyline points="9 22 9 12 15 12 15 22"/>
+                  </svg>
+                </div>
+              </div>
+              <div className="op-profile-chips">
+                {user?.user_name && (
+                  <span className="op-profile-chip op-profile-chip-user">@{user.user_name}</span>
+                )}
+                {user?.department && (
+                  <span className="op-profile-chip op-profile-chip-dept">{user.department}</span>
+                )}
+              </div>
+            </div>
+
+            {/* ── Task Stats ── */}
+            <div className="op-profile-section">
+              <div className="op-profile-section-label">Task Overview</div>
+              <div className="op-stat-grid">
+                {[
+                  { label: "Assigned",  value: taskTotal,     cls: "op-stat-blue"  },
+                  { label: "Pending",   value: taskPending,   cls: "op-stat-amber" },
+                  { label: "Delayed",   value: taskDelayed,   cls: "op-stat-red"   },
+                  { label: "Completed", value: taskCompleted, cls: "op-stat-green" },
+                ].map(s => (
+                  <div key={s.label} className={`op-stat-card ${s.cls}`}>
+                    <div className="op-stat-value">{loadingTasks ? "—" : s.value}</div>
+                    <div className="op-stat-label">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      }
       default:
         return null;
     }
@@ -12487,6 +12585,32 @@ case "all-drawings":
               })}
                 </>
               )}
+              
+              <span className="op-nav-section" style={{ marginTop: 8 }}>Account</span>
+              {(() => {
+                const item = ADMIN_PROFILE_ITEM;
+                const isActive = activeTab === item.key;
+                const isHovered = hoveredNavKey === item.key;
+                const highlighted = isActive || isHovered;
+                return (
+                  <button
+                    key={item.key}
+                    className={`op-nav-item${isActive ? " Active" : ""}`}
+                    onClick={() => handleNavClick(item.key)}
+                    onMouseEnter={() => setHoveredNavKey(item.key)}
+                    onMouseLeave={() => setHoveredNavKey(null)}
+                    style={{
+                      background: highlighted ? `${item.color}18` : undefined,
+                      color: highlighted ? item.color : undefined,
+                      transition: "background .12s, color .12s",
+                    }}
+                  >
+                    <span className="op-nav-icon">{item.icon}</span>
+                    {item.label}
+                  </button>
+                );
+              })()}
+              
               {filterNav(NAV_ITEMS.slice(9), user, "admin").length > 0 && (
                 <>
               <span className="op-nav-section">Site Management</span>
@@ -12570,6 +12694,14 @@ case "all-drawings":
                 </>
               )}
             </nav>
+            <div className="op-sidebar-footer">
+              <PortalSettingsMenu
+                user={user}
+                isDark={isDark}
+                onThemeToggle={() => setIsDark((current) => !current)}
+                onProfileClick={() => { setActiveTab("profile"); if (typeof window !== "undefined" && window.innerWidth <= 760) setSidebarOpen(false); }}
+              />
+            </div>
           </aside>
 
           <main className="op-main" ref={mainRef}>

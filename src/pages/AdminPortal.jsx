@@ -10610,7 +10610,7 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
         </div>
       ) : (
         <>
-          <div className="ap-leave-summary ap-leave-summary-tight">
+          <div className="ap-leave-summary ap-leave-summary-tight ap-dr-summary">
             <div style={{ background: "#eff6ff", borderColor: "#bfdbfe" }}>
               <span>Total Tasks</span>
               <strong style={{ color: "#2563eb" }}>{dr.length}</strong>
@@ -10629,7 +10629,7 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
             </div>
           </div>
 
-          <div className="ap-table-wrap">
+          <div className="ap-table-wrap ap-table-wrap--report">
             <table className="ap-table">
               <thead>
                 <tr>
@@ -10796,10 +10796,10 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
             </div>
           </div>
 
-          <div className="ap-table-wrap">
+          <div className="ap-table-wrap ap-table-wrap--report">
             <table className="ap-table">
-              <thead style={{ background: "#1e293b" }}>
-                <tr style={{ background: "#1e293b" }}>
+              <thead>
+                <tr>
                   {[
                     "SR", "Employee", "Project", "Task Description",
                     "Timestamp (Assigned)", "Emp Acceptance Time", "Hrs to Complete",
@@ -10807,7 +10807,7 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
                     "Sent for Verification", "Work Status", "Work Delay",
                     "Start Verification", "Verified", "Verify Status", "Verify Delay",
                   ].map((h) => (
-                    <th key={h} className="ap-th" style={{ color: "#fff", background: "#1e293b" }}>{h}</th>
+                    <th key={h} className="ap-th">{h}</th>
                   ))}
                 </tr>
               </thead>

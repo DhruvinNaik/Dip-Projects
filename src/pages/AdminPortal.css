@@ -354,12 +354,27 @@
               }
             .ap-task-mobile-grid { display: none; }   /* hidden by default */
             @media (max-width: 760px) {
-              .ap-table-wrap { display: none; }
+              .ap-table-wrap:not(.ap-table-wrap--report) { display: none; }
               .ap-task-mobile-grid { display: grid;}
             }
 
+            /* Report tables stay visible on mobile, just scroll horizontally */
+            @media (max-width: 760px) {
+              .ap-table-wrap--report {
+                display: block !important;
+                overflow-x: auto;
+                -webkit-overflow-scrolling: touch;
+                max-height: none;
+              }
+              /* Daily report summary: 2×2 grid on mobile */
+              .ap-dr-summary {
+                grid-template-columns: 1fr 1fr !important;
+              }
+            }
+
             .ap-table thead th {
-              background: #b1aeaea1 !important;
+              background: #475569 !important;
+              color: #f1f5f9 !important;
             }
             .oh-tree-scroll {
   overflow-x: auto;

@@ -363,13 +363,22 @@
               .ap-table-wrap--report {
                 display: block !important;
                 overflow-x: auto;
+                overflow-y: auto;
                 -webkit-overflow-scrolling: touch;
-                max-height: none;
+                max-height: 520px;
               }
               /* Daily report summary: 2×2 grid on mobile */
               .ap-dr-summary {
                 grid-template-columns: 1fr 1fr !important;
               }
+            }
+            /* Daily report: clickable row */
+            .ap-dr-row {
+              cursor: pointer;
+              transition: background 0.12s;
+            }
+            .ap-dr-row:hover {
+              background: #f0f7ff !important;
             }
 
             .ap-table thead th {

@@ -6239,6 +6239,7 @@ const [delayDepartment, setDelayDepartment] = useState("");
 const [delayReportRows, setDelayReportRows] = useState(null); // null = not generated yet
 const [delayReportMeta, setDelayReportMeta] = useState(null);
 const [delaySelectedTask, setDelaySelectedTask] = useState(null); // row-click detail popup
+const [drSelectedTask, setDrSelectedTask] = useState(null); // daily report row-click detail popup
   const [visibleTaskCount, setVisibleTaskCount] = useState(30);
   const [visibleOverdueCount, setVisibleOverdueCount] = useState(30);
   const [visiblePendingVerificationCount, setVisiblePendingVerificationCount] =
@@ -10640,7 +10641,7 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
               </thead>
               <tbody>
                 {dr.map((r) => (
-                  <tr key={r.id} className="ap-tr">
+                  <tr key={r.id} className="ap-tr ap-dr-row" onClick={() => setDrSelectedTask(r)}>
                     <td className="ap-td" style={{ color: "#94a3b8" }}>{r.sr}</td>
                     <td className="ap-td">{formatSubmissionDate(r.prevDate)}</td>
                     <td className="ap-td">{formatSubmissionDate(r.targetDate)}</td>
@@ -10671,6 +10672,51 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
           </div>
         </>
       )}
+
+      {/* ── Daily Report row-detail popup ───────────────────────── */}
+      {drSelectedTask && (() => {
+        const r = drSelectedTask;
+        const detailRows = [
+          { label: "SR",          value: `#${r.sr}` },
+          { label: "Task",        value: r.title, full: true },
+          { label: "Description", value: r.description || "—", full: true },
+          { label: "Site",        value: r.siteName || "—" },
+          { label: "Assignee",    value: r.assignee },
+          { label: "Prev. Date",  value: formatSubmissionDate(r.prevDate) },
+          { label: "Target Date", value: formatSubmissionDate(r.targetDate) },
+          { label: "Remark",      value: dailyReportRemarks[r.id] || "—", full: true },
+        ];
+        return (
+          <div className="dr-overlay" onClick={() => setDrSelectedTask(null)}>
+            <div className="dr-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="dr-modal-header">
+                <div>
+                  <div className="dr-modal-title">Task Detail</div>
+                  <div className="dr-modal-subtitle">#{r.sr} · {r.assignee} · {r.siteName || "—"}</div>
+                </div>
+                <button className="dr-modal-close" onClick={() => setDrSelectedTask(null)} aria-label="Close">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                  </svg>
+                </button>
+              </div>
+              <div className="dr-modal-badges">
+                <span className="ap-badge" style={{ background: r.delayStyle.bg, color: r.delayStyle.color, fontWeight: 700, fontSize: 12 }}>
+                  {r.delayLabel}
+                </span>
+              </div>
+              <div className="dr-modal-grid">
+                {detailRows.map(({ label, value, full }) => (
+                  <div key={label} className={`dr-modal-field${full ? " dr-modal-field--full" : ""}`}>
+                    <div className="dr-field-label">{label}</div>
+                    <div className="dr-field-value">{value}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

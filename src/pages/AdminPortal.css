@@ -977,3 +977,30 @@
 [data-theme="dark"] .pr-high   { background:rgba(220,38,38,.16);  color:#fca5a5; }
 [data-theme="dark"] .pr-medium { background:rgba(245,158,11,.16); color:#fbbf24; }
 [data-theme="dark"] .pr-low    { background:rgba(59,130,246,.16); color:#93c5fd; }  
+/* ═══ Mobile modal: keep header below the navbar ═══ */
+@media (max-width: 760px) {
+  .ap-modal-backdrop {
+    padding: 0;
+    align-items: flex-end;
+    /* push the usable area below the navbar */
+    padding-top: calc(70px + env(safe-area-inset-top, 0px));
+  }
+
+  .ap-modal {
+    margin-top: 0;                       /* remove the desktop 50px margin */
+    width: 100%;
+    max-width: 100%;
+    /* never taller than the space under the navbar */
+    max-height: calc(100dvh - 70px - env(safe-area-inset-top, 0px));
+    border-radius: 16px 16px 0 0;
+  }
+
+  .ap-modal-header {
+    top: 0;                              /* stays pinned inside the modal's own scroll */
+    padding: 16px 18px 12px;
+  }
+
+  .ap-modal-body {
+    padding: 18px 18px calc(24px + env(safe-area-inset-bottom, 0px));
+  }
+}

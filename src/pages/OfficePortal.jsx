@@ -395,7 +395,7 @@ function TaskFilterBar({
       {sites.length > 0 && (
         <>
           <div className="tf-group">
-            <span className="tf-label">
+            <span className="tf-lab el">
               <svg
                 width="13"
                 height="13"

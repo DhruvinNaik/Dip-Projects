@@ -87,6 +87,7 @@ export default function Navbar({ onMenuToggle, menuOpen, showQrScanner = false, 
         </div>
 
         <div className="navbar-right">
+          
           {user && (
             <>
               <div className="navbar-divider"/>

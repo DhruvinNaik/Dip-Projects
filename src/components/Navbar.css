@@ -346,3 +346,36 @@
         @media (min-width: 901px) {
           .navbar-ham { display: none; }
         }
+        
+        .navbar-update p {
+          /* display:none; */
+          font-size: smaller;
+          font-weight: 600;
+
+          color: #ffffff;
+
+          text-shadow:
+            0 0 3px rgba(255, 255, 255, 0.8),
+            0 0 7px rgba(255, 255, 255, 0.45);
+
+          animation: navbarGlow 2s ease-in-out infinite;
+        }
+
+        @keyframes navbarGlow {
+          0% {
+            color: #ffffff;
+            text-shadow: 0 0 2px rgba(255,255,255,.5);
+          }
+
+          50% {
+            color: #f1f5f9;
+            text-shadow:
+              0 0 5px rgba(255,255,255,.9),
+              0 0 12px rgba(255,255,255,.6);
+          }
+
+          100% {
+            color: #ffffff;
+            text-shadow: 0 0 2px rgba(255,255,255,.5);
+          }
+        }

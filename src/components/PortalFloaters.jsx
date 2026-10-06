@@ -2623,16 +2623,17 @@ function MaterialPanel({ user, onClose }) {
                 onClick={(e) => {
                   e.preventDefault();
                   const rect = e.currentTarget.getBoundingClientRect();
+                  const isDark = document.documentElement.getAttribute("data-theme") === "dark";
                   const menu = document.createElement("div");
                   menu.className = "pf-mat-upload-menu";
                   menu.style.cssText = `
                     position: fixed;
                     top: ${rect.bottom + 8}px;
                     left: ${rect.left}px;
-                    background: white;
-                    border: 1px solid #e2e8f0;
+                    background: ${isDark ? "#1e1c19" : "white"};
+                    border: 1px solid ${isDark ? "#3a3733" : "#e2e8f0"};
                     border-radius: 8px;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+                    box-shadow: 0 4px 12px rgba(0,0,0,${isDark ? "0.3" : "0.12"});
                     z-index: 9999;
                     min-width: 200px;
                   `;
@@ -2657,11 +2658,11 @@ function MaterialPanel({ user, onClose }) {
                     background: transparent;
                     cursor: pointer;
                     font-size: 14px;
-                    color: #0f172a;
-                    border-bottom: 1px solid #e2e8f0;
+                    color: ${isDark ? "#f0ede8" : "#0f172a"};
+                    border-bottom: 1px solid ${isDark ? "#3a3733" : "#e2e8f0"};
                     transition: background 0.15s;
                   `;
-                  fileOption.onmouseover = () => fileOption.style.background = "#f8fafc";
+                  fileOption.onmouseover = () => fileOption.style.background = isDark ? "#252320" : "#f8fafc";
                   fileOption.onmouseout = () => fileOption.style.background = "transparent";
                   fileOption.onclick = () => {
                     document.body.removeChild(menu);
@@ -2704,10 +2705,10 @@ function MaterialPanel({ user, onClose }) {
                     background: transparent;
                     cursor: pointer;
                     font-size: 14px;
-                    color: #0f172a;
+                    color: ${isDark ? "#f0ede8" : "#0f172a"};
                     transition: background 0.15s;
                   `;
-                  cameraOption.onmouseover = () => cameraOption.style.background = "#f8fafc";
+                  cameraOption.onmouseover = () => cameraOption.style.background = isDark ? "#252320" : "#f8fafc";
                   cameraOption.onmouseout = () => cameraOption.style.background = "transparent";
                   cameraOption.onclick = async () => {
                     document.body.removeChild(menu);
@@ -2768,7 +2769,8 @@ function MaterialPanel({ user, onClose }) {
                   document.body.appendChild(menu);
                   
                   const closeMenu = (e) => {
-                    if (!menu.contains(e.target) && e.target !== e.currentTarget?.closest(".pf-mat-upload-btn")) {
+                    const btn = e.target?.closest?.(".pf-mat-upload-btn");
+                    if (!menu.contains(e.target) && !btn) {
                       document.removeEventListener("click", closeMenu);
                       if (document.body.contains(menu)) document.body.removeChild(menu);
                     }

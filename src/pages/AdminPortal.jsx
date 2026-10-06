@@ -569,14 +569,14 @@ const INSIGHTS_NAV = [
   {
     key: "permissions",
     label: "Permissions",
-    color: "#000000",
+    color: "#475569",
     icon: (
       <svg
         width="18"
         height="18"
         viewBox="0 0 24 24"
         fill="none"
-        stroke="#000000"
+        stroke="currentColor"
         strokeWidth="2"
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -2349,6 +2349,7 @@ function MisCountPill({ value, bg, color, icon }) {
 function MisWeekCard({ weekData, taskType }) {
   const { week, rows } = weekData;
   const grand = computeMisGrand(rows);
+  const dk = document.documentElement.getAttribute("data-theme") === "dark";
 
   const openColor = (pct) => (pct === 0 ? "#16a34a" : pct < 15 ? "#d97706" : "#dc2626");
 
@@ -2365,13 +2366,13 @@ function MisWeekCard({ weekData, taskType }) {
           alignItems: "center",
           gap: 10,
           padding: "14px 20px",
-          background: isGrand ? "#f8fafc" : "#fff",
-          borderTop: isGrand ? "2px solid #e2e8f0" : "1px solid #f1f5f9",
+          background: isGrand ? (dk ? "#2e2c29" : "#f8fafc") : (dk ? "#1e1c19" : "#fff"),
+          borderTop: isGrand ? `2px solid ${dk ? "#3a3733" : "#e2e8f0"}` : `1px solid ${dk ? "#2e2c29" : "#f1f5f9"}`,
           fontWeight: isGrand ? 700 : 400,
         }}
       >
         <div>
-          <div style={{ fontSize: 13.5, color: "#1e293b", fontWeight: 700 }}>
+          <div style={{ fontSize: 13.5, color: dk ? "#f0ede8" : "#1e293b", fontWeight: 700 }}>
             {isGrand ? `Grand Total (${grand.employeeCount} employees)` : r.name}
           </div>
           {!isGrand && (
@@ -2438,7 +2439,7 @@ function MisWeekCard({ weekData, taskType }) {
   };
 
   return (
-    <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+    <div style={{ background: dk ? "#252320" : "#fff", border: `1px solid ${dk ? "#3a3733" : "#e2e8f0"}`, borderRadius: 12, overflow: "hidden", marginBottom: 20, boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
       {/* Week header band — softer, less saturated blue */}
       <div
         style={{
@@ -2473,8 +2474,8 @@ function MisWeekCard({ weekData, taskType }) {
           gridTemplateColumns: COLS,
           gap: 10,
           padding: "11px 20px",
-          background: "#f1f5f9",
-          borderBottom: "1px solid #e2e8f0",
+          background: dk ? "#2e2c29" : "#f1f5f9",
+          borderBottom: `1px solid ${dk ? "#3a3733" : "#e2e8f0"}`,
         }}
       >
         {["EMPLOYEE", "TOTAL", "DONE", "ON-TIME", "DELAYED DONE", "DELAYED", "PENDING", "N/A", "OPEN % (0=ALL DONE)"].map(
@@ -2484,7 +2485,7 @@ function MisWeekCard({ weekData, taskType }) {
               style={{
                 fontSize: 10,
                 fontWeight: 700,
-                color: "#64748b",
+                color: dk ? "#9a9389" : "#64748b",
                 letterSpacing: ".04em",
                 textAlign: i === 0 ? "left" : i === 8 ? "right" : "center",
               }}
@@ -3187,6 +3188,7 @@ function TaskActionsMenu({
         onClick={handleToggle}
         title="Actions"
         disabled={busy}
+        className="ap-actions-trigger"
         style={{
           width: 30,
           height: 30,
@@ -3206,60 +3208,61 @@ function TaskActionsMenu({
           <circle cx="12" cy="19" r="1.6" />
         </svg>
       </button>
-      {open && (
-        <div
-          onClick={(e) => e.stopPropagation()}
-          style={{
-            position: "fixed",
-            top: menuPosition.top,
-            left: menuPosition.left,
-            background: "#fff",
-            border: "1px solid #e2e8f0",
-            borderRadius: 10,
-            boxShadow: "0 8px 24px rgba(0,0,0,.12)",
-            minWidth: 190,
-            zIndex: 9999,
-            overflow: "hidden",
-          }}
-        >
-          {items.map((item) => {
-            const isHovered = hoveredKey === item.key;
-            return (
-              <button
-                key={item.key}
-                onClick={() => {
-                  setOpen(false);
-                  item.onClick();
-                }}
-                onMouseEnter={() => setHoveredKey(item.key)}
-                onMouseLeave={() => setHoveredKey(null)}
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 9,
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "9px 14px",
-                  fontSize: 13,
-                  fontWeight: 600,
-                  background: isHovered ? item.bg : "transparent",
-                  border: "none",
-                  cursor: "pointer",
-                  color: isHovered ? item.color : "#334155",
-                  transition: "background .12s, color .12s",
-                }}
-              >
-                <span
-                  style={{ display: "flex", flexShrink: 0, color: item.color }}
+      {open && (() => {
+        const dk = document.documentElement.getAttribute("data-theme") === "dark";
+        return (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              position: "fixed",
+              top: menuPosition.top,
+              left: menuPosition.left,
+              background: dk ? "#252320" : "#fff",
+              border: `1px solid ${dk ? "#3a3733" : "#e2e8f0"}`,
+              borderRadius: 10,
+              boxShadow: dk ? "0 8px 24px rgba(0,0,0,.4)" : "0 8px 24px rgba(0,0,0,.12)",
+              minWidth: 190,
+              zIndex: 9999,
+              overflow: "hidden",
+            }}
+          >
+            {items.map((item) => {
+              const isHovered = hoveredKey === item.key;
+              return (
+                <button
+                  key={item.key}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onClick();
+                  }}
+                  onMouseEnter={() => setHoveredKey(item.key)}
+                  onMouseLeave={() => setHoveredKey(null)}
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 9,
+                    width: "100%",
+                    textAlign: "left",
+                    padding: "9px 14px",
+                    fontSize: 13,
+                    fontWeight: 600,
+                    background: isHovered ? (dk ? item.color + "22" : item.bg) : "transparent",
+                    border: "none",
+                    cursor: "pointer",
+                    color: isHovered ? item.color : (dk ? "#c4bdb4" : "#334155"),
+                    transition: "background .12s, color .12s",
+                  }}
                 >
-                  {item.icon}
-                </span>
-                {item.label}
+                  <span style={{ display: "flex", flexShrink: 0, color: item.color }}>
+                    {item.icon}
+                  </span>
+                  {item.label}
               </button>
             );
           })}
-        </div>
-      )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -10859,10 +10862,10 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
           <p className="op-empty-text">No tasks were assigned in this period.</p>
         </div>
       ) : (
-        <div style={{ background: "#fff", border: "1.5px solid #e2e8f0", borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
-          <div style={{ padding: "18px 22px", textAlign: "center", borderBottom: "1px solid #f1f5f9" }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: "#1e293b" }}>Task Delay Report</div>
-            <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>
+        <div style={{ background: isDark ? "#252320" : "#fff", border: `1.5px solid ${isDark ? "#3a3733" : "#e2e8f0"}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,.04)" }}>
+          <div style={{ padding: "18px 22px", textAlign: "center", borderBottom: `1px solid ${isDark ? "#3a3733" : "#f1f5f9"}` }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: isDark ? "#f0ede8" : "#1e293b" }}>Task Delay Report</div>
+            <div style={{ fontSize: 12, color: isDark ? "#7a7368" : "#64748b", marginTop: 4 }}>
               {toDateStr(s.from)} → {toDateStr(s.to)} · {s.total} task{s.total !== 1 ? "s" : ""} ·{" "}
               <span style={{ color: "#dc2626", fontWeight: 700 }}>{s.delayed} delayed</span> ·{" "}
               <span style={{ color: "#16a34a", fontWeight: 700 }}>{s.onTime} on time</span> ·{" "}
@@ -12586,31 +12589,6 @@ case "all-drawings":
                 </>
               )}
               
-              <span className="op-nav-section" style={{ marginTop: 8 }}>Account</span>
-              {(() => {
-                const item = ADMIN_PROFILE_ITEM;
-                const isActive = activeTab === item.key;
-                const isHovered = hoveredNavKey === item.key;
-                const highlighted = isActive || isHovered;
-                return (
-                  <button
-                    key={item.key}
-                    className={`op-nav-item${isActive ? " Active" : ""}`}
-                    onClick={() => handleNavClick(item.key)}
-                    onMouseEnter={() => setHoveredNavKey(item.key)}
-                    onMouseLeave={() => setHoveredNavKey(null)}
-                    style={{
-                      background: highlighted ? `${item.color}18` : undefined,
-                      color: highlighted ? item.color : undefined,
-                      transition: "background .12s, color .12s",
-                    }}
-                  >
-                    <span className="op-nav-icon">{item.icon}</span>
-                    {item.label}
-                  </button>
-                );
-              })()}
-              
               {filterNav(NAV_ITEMS.slice(9), user, "admin").length > 0 && (
                 <>
               <span className="op-nav-section">Site Management</span>
@@ -12618,6 +12596,7 @@ case "all-drawings":
                 const isActive = activeTab === item.key;
                 const isHovered = hoveredNavKey === item.key;
                 const highlighted = isActive || isHovered;
+                const activeColor = (isDark && item.key === "permissions") ? "#ffffff" : item.color;
                 return (
                   <button
                     key={item.key}
@@ -12627,7 +12606,7 @@ case "all-drawings":
                     onMouseLeave={() => setHoveredNavKey(null)}
                     style={{
                       background: highlighted ? `${item.color}18` : undefined,
-                      color: highlighted ? item.color : undefined,
+                      color: highlighted ? activeColor : undefined,
                       transition: "background .12s, color .12s",
                     }}
                   >

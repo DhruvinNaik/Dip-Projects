@@ -7102,6 +7102,14 @@ const handleGenerateDailyReport = () => {
   setDailyReportRows(rows);
 };
 
+// jsPDF's built-in fonts only cover Latin-1; emoji (e.g. the ⚠️ prefix on recurring
+// tasks) render as garbled, letter-spaced text that cuts off the rest of the cell.
+const pdfSafe = (v) =>
+  String(v ?? "")
+    .replace(/[^\x20-\x7E\xA0-\xFF\u2013\u2014\u2018\u2019\u201C\u201D\u2022\u2026]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
 const handleDailyReportPdf = () => {
   if (!dailyReportRows) return showToast("error", "Generate the report first.");
 
@@ -7127,12 +7135,13 @@ const handleDailyReportPdf = () => {
   autoTable(doc, {
     startY: 84,
     margin: { left: margin, right: margin },
-    head: [["SR", "Prev. Date", "Target Date", "Task", "Site", "Assignee", "Status", "Remarks"]],
+    head: [["SR", "Prev. Date", "Target Date", "Task", "Description", "Site", "Assignee", "Status", "Remarks"]],
     body: dailyReportRows.map((r) => [
       r.sr,
       formatSubmissionDate(r.prevDate),
       formatSubmissionDate(r.targetDate),
-      r.description ? `${r.title} — ${r.description}` : r.title,
+      pdfSafe(r.title),
+      pdfSafe(r.description) || "—",
       r.siteName || "—",
       r.assignee,
       r.delayLabel,
@@ -7144,8 +7153,9 @@ const handleDailyReportPdf = () => {
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
       0: { cellWidth: 26, halign: "center" },
-      3: { cellWidth: 180 },
-      6: { cellWidth: 70, fontStyle: "bold" },
+      3: { cellWidth: 110 },
+      4: { cellWidth: 170 },
+      7: { cellWidth: 60, fontStyle: "bold" },
     },
   });
 
@@ -7157,7 +7167,7 @@ const handleDelayReportPdf = () => {
     return showToast("error", "Generate the report first.");
   }
 
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a3" });
   const s = delayReportMeta;
   const pageWidth = doc.internal.pageSize.getWidth();
   const margin = 40;
@@ -7232,14 +7242,16 @@ const handleDelayReportPdf = () => {
     startY: chipY + chipH + 20,
     margin: { left: margin, right: margin },
     head: [[
-      "SR", "Employee", "Project", "Assigned",
+      "SR", "Employee", "Project", "Description", "Assigned",
       "Accepted", "Hrs", "Hold/Resume",
-      "Total Hold", "Due", "Submitted", "Status", "Delay",
+      "Total Hold", "Due", "Submitted", "Work Status", "Work Delay",
+      "Start Verification", "Verified", "Verify Status", "Verify Delay",
     ]],
     body: delayReportRows.map((r) => [
       r.sr,
       r.employee,
       r.project,
+      pdfSafe(r.taskDescription) || "—",
       fmtDT(r.assignedAt),
       fmtDT(r.acceptedAt),
       r.hoursToComplete ? `+${r.hoursToComplete}h` : "—",
@@ -7249,6 +7261,10 @@ const handleDelayReportPdf = () => {
       r.submittedAt ? fmtDT(r.submittedAt) : "Pending",
       r.statusLabel,
       r.delayLabel,
+      fmtDT(r.startVerification),
+      fmtDT(r.verified),
+      r.verifyStatusLabel || "—",
+      r.verifyDelayLabel || "—",
     ]),
     theme: "striped",
     styles: {
@@ -7268,28 +7284,37 @@ const handleDelayReportPdf = () => {
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     columnStyles: {
-      0: { cellWidth: 26, halign: "center", fontStyle: "bold", textColor: [37, 99, 235] },
-      1: { cellWidth: 78, fontStyle: "bold" },
-      2: { cellWidth: 78 },
-      3: { cellWidth: 68 },
-      4: { cellWidth: 68 },
-      5: { cellWidth: 34, halign: "center" },
-      6: { cellWidth: 54 },
-      7: { cellWidth: 48, halign: "center" },
-      8: { cellWidth: 68 },
-      9: { cellWidth: 78 },
-      10: { cellWidth: 52, halign: "center", fontStyle: "bold" },
-      11: { cellWidth: 66 },
+      0: { cellWidth: 24, halign: "center", fontStyle: "bold", textColor: [37, 99, 235] },
+      1: { cellWidth: 70, fontStyle: "bold" },
+      2: { cellWidth: 70 },
+      3: { cellWidth: 170 },
+      4: { cellWidth: 62 },
+      5: { cellWidth: 62 },
+      6: { cellWidth: 30, halign: "center" },
+      7: { cellWidth: 50 },
+      8: { cellWidth: 44, halign: "center" },
+      9: { cellWidth: 62 },
+      10: { cellWidth: 70 },
+      11: { cellWidth: 48, halign: "center", fontStyle: "bold" },
+      12: { cellWidth: 58 },
+      13: { cellWidth: 62 },
+      14: { cellWidth: 62 },
+      15: { cellWidth: 54, halign: "center", fontStyle: "bold" },
+      16: { cellWidth: 58 },
     },
     didParseCell: (data) => {
-      if (data.section === "body" && data.column.index === 10) {
+      if (data.section === "body" && data.column.index === 11) {
         const color = statusColors[data.cell.raw];
         if (color) {
           data.cell.styles.textColor = color;
           data.cell.styles.fontStyle = "bold";
         }
       }
-      if (data.section === "body" && data.column.index === 9 && data.cell.raw === "Pending") {
+      if (data.section === "body" && data.column.index === 15) {
+        const vc = { Verified: [22, 163, 74], Correction: [234, 88, 12], Pending: [37, 99, 235] }[data.cell.raw];
+        if (vc) data.cell.styles.textColor = vc;
+      }
+      if (data.section === "body" && data.column.index === 10 && data.cell.raw === "Pending") {
         data.cell.styles.textColor = [37, 99, 235];
         data.cell.styles.fontStyle = "italic";
       }

@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Navbar from "../components/Navbar";
 import PortalSettingsMenu from "../components/PortalSettingsMenu";
 import PortalFloaters from "../components/PortalFloaters";
@@ -14,6 +14,11 @@ import {
   deriveLeaveStatus,
   mergeRejectionReason,
 } from "./SitePortal";
+
+
+// Number of tasks the employee currently has accepted and running (not held/completed).
+// Hold is only allowed while at least one OTHER task keeps running.
+const RunningTaskCountContext = createContext(0);
 
 // ── Nav Items ──────────────────────────────────────────────────────────────
 const TASK_NAV = [
@@ -952,6 +957,9 @@ function TaskActionMenu({
   const isNotApplicable = task.status === "not_applicable"; // ← add
   const isAccepted = !!task.accepted_at;
   const isHeld = !!task.is_held;
+  const runningTaskCount = useContext(RunningTaskCountContext);
+  // This task is running now; holding it leaves (runningTaskCount - 1) others running.
+  const canHold = isAccepted && !isHeld && runningTaskCount > 1;
   const canReschedule = task.reschedule_allowed && !isCompleted;
 
   // ── Recurring tasks: only Done / Not Applicable ──────────────────────
@@ -1115,7 +1123,7 @@ function TaskActionMenu({
   {
     key: "hold",
     label: isHeld ? "Continue Task" : "Hold Task",
-    hidden: hasPendingVerification,
+    hidden: hasPendingVerification || (!isHeld && !canHold),
     color: isHeld ? "#2563eb" : "#d97706",
     bg: isHeld ? "#eff6ff" : "#fffbeb",
     onClick: () => isHeld ? onContinue(task) : onHold(task),
@@ -2787,7 +2795,7 @@ async function uploadDrawingFiles(supabaseClient, siteName, dateStr, files) {
   const year = d.getFullYear();
   const month = MONTHS[d.getMonth()];
   const dayFolder = `${String(d.getDate()).padStart(2, "0")}-${String(d.getMonth() + 1).padStart(2, "0")}-${year}`;
-
+  
   const uploaded = [];
   for (const file of files) {
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -3848,6 +3856,12 @@ const handleAcceptTask = async (task) => {
 };
 
 const handleHoldTask = async (task) => {
+  const othersRunning = myTasks.filter(
+    (t) => t.id !== task.id && t.accepted_at && !t.is_held && t.status !== "completed" && t.status !== "not_applicable",
+  ).length;
+  if (othersRunning < 1) {
+    return showToast("error", "At least one task must keep running — you can't hold your only active task.");
+  }
   const nowIso = new Date().toISOString();
   const lastStart = task.resumed_at || task.accepted_at;
   const elapsed = lastStart ? Math.floor((new Date(nowIso) - new Date(lastStart)) / 1000) : 0;
@@ -7213,8 +7227,12 @@ case "all-drawings":
     }
   };
 
+  const runningTaskCount = myTasks.filter(
+    (t) => t.accepted_at && !t.is_held && t.status !== "completed" && t.status !== "not_applicable",
+  ).length;
+
   return (
-    <>
+    <RunningTaskCountContext.Provider value={runningTaskCount}>
       <div className="op-root">
         <Navbar
           onMenuToggle={() => setSidebarOpen((p) => !p)}
@@ -10162,6 +10180,6 @@ case "all-drawings":
         </div>
       )}
       <PortalFloaters showBot botScope="office" />
-    </>
+    </RunningTaskCountContext.Provider>
   );
 }

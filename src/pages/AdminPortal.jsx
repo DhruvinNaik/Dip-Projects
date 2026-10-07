@@ -4,6 +4,7 @@ import PortalFloaters from "../components/PortalFloaters";
 import PortalSettingsMenu from "../components/PortalSettingsMenu";
 import PortalSwitcher from "../components/PortalSwitcher";
 import { supabase } from "../supabase";
+import WeeklyTasksPanel, { TaskModeToggle } from "./WeeklyTasksPanel";
 import { useRecurringTasks } from "../hooks/useRecurringTasks";
 import SiteReport from "./Sitereport";
 import "./AdminPortal.css";
@@ -5979,6 +5980,7 @@ export default function AdminPortal() {
 const [hoveredNavKey, setHoveredNavKey] = useState(null);
   const [activeTab, setActiveTab] = useState("dashboard");
   const [showTaskModal, setShowTaskModal] = useState(false);
+  const [taskModalMode, setTaskModalMode] = useState("assign"); // "assign" | "weekly"
   const [rejectModal, setRejectModal] = useState(null);
 
   const [overdueRescheduleModal, setOverdueRescheduleModal] = useState(null);
@@ -6681,7 +6683,21 @@ const [drSelectedTask, setDrSelectedTask] = useState(null); // daily report row-
 
   const handleEmpFormChange = (e) => {
     const { name, value } = e.target;
-    setEmpForm((prev) => ({ ...prev, [name]: value }));
+    setEmpForm((prev) => {
+      const next = { ...prev, [name]: value };
+      // Default password = text before "." in username + "123" (john.d -> john123),
+      // kept in sync until the password is edited by hand.
+      if (name === "username" && !editingEmployee) {
+        const autoPw = (u) => {
+          const base = u.trim().split(".")[0];
+          return base ? `${base}123` : "";
+        };
+        if (!prev.password || prev.password === autoPw(prev.username)) {
+          next.password = autoPw(value);
+        }
+      }
+      return next;
+    });
   };
 
   const handleEmpSubmit = async () => {
@@ -8367,16 +8383,30 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
         );
       case "assign-task":
         return (
-          <TaskFormWithCheckpoints
-            form={form}
-            handleFormChange={handleFormChange}
-            setForm={setForm}
-            handleSubmit={handleSubmit}
-            submitting={submitting}
-            onSuccess={() => setShowTaskModal(false)}
-            employees={assignableEmployees}
-            sites={sites}
-          />
+          <>
+            <div style={{ marginBottom: 16 }}>
+              <TaskModeToggle mode={taskModalMode} onChange={setTaskModalMode} />
+            </div>
+            {taskModalMode === "weekly" ? (
+              <WeeklyTasksPanel
+                user={user}
+                employees={assignableEmployees}
+                sites={sites}
+                showToast={showToast}
+              />
+            ) : (
+              <TaskFormWithCheckpoints
+                form={form}
+                handleFormChange={handleFormChange}
+                setForm={setForm}
+                handleSubmit={handleSubmit}
+                submitting={submitting}
+                onSuccess={() => setShowTaskModal(false)}
+                employees={assignableEmployees}
+                sites={sites}
+              />
+            )}
+          </>
         );
 
       case "all-tasks":
@@ -12929,7 +12959,10 @@ case "all-drawings":
               if (e.target === e.currentTarget) setShowTaskModal(false);
             }}
           >
-            <div className="ap-modal">
+            <div
+              className="ap-modal"
+              style={taskModalMode === "weekly" && !editingTaskId ? { maxWidth: 1100 } : undefined}
+            >
               <div className="ap-modal-header">
                 <div className="ap-modal-title">
                   <div className="ap-modal-title-icon">
@@ -12946,8 +12979,11 @@ case "all-drawings":
                       <path d="M12 5v14M5 12h14" />
                     </svg>
                   </div>
-                  {editingTaskId ? "Edit Task" : "Assign New Task"}
+                  {editingTaskId ? "Edit Task" : taskModalMode === "weekly" ? "Weekly Tasks" : "Assign New Task"}
                 </div>
+                {!editingTaskId && (
+                  <TaskModeToggle mode={taskModalMode} onChange={setTaskModalMode} />
+                )}
                 <button
                   className="ap-modal-close"
                   onClick={() => {
@@ -12971,16 +13007,25 @@ case "all-drawings":
                 </button>
               </div>
               <div className="ap-modal-body">
-                <TaskFormWithCheckpoints
-                  form={form}
-                  handleFormChange={handleFormChange}
-                  setForm={setForm}
-                  handleSubmit={handleSubmit}
-                  submitting={submitting}
-                  onSuccess={() => setShowTaskModal(false)}
-                  employees={assignableEmployees}
-                  sites={sites}
-                />
+                {taskModalMode === "weekly" && !editingTaskId ? (
+                  <WeeklyTasksPanel
+                    user={user}
+                    employees={assignableEmployees}
+                    sites={sites}
+                    showToast={showToast}
+                  />
+                ) : (
+                  <TaskFormWithCheckpoints
+                    form={form}
+                    handleFormChange={handleFormChange}
+                    setForm={setForm}
+                    handleSubmit={handleSubmit}
+                    submitting={submitting}
+                    onSuccess={() => setShowTaskModal(false)}
+                    employees={assignableEmployees}
+                    sites={sites}
+                  />
+                )}
               </div>
             </div>
           </div>

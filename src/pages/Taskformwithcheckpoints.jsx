@@ -478,7 +478,7 @@ function PendingTaskQueuePanel({ assignedTo, employeeName, form, setForm }) {
 }
 
 // ── TaskForm (drop-in replacement) ────────────────────────────────────────────
-export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submitting, onSuccess, employees = [], sites = [] }) {
+export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submitting, onSuccess, employees = [], sites = [], hideAssignTo = false, submitLabel = "Assign Task", submittingLabel = "Assigning…" }) {
   const [cpCount, setCpCount] = useState(0);  
 
   const liveAnchor    = form.is_recurring ? buildAnchor(form) : null;
@@ -524,6 +524,7 @@ export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submit
       `}</style>
 
       <div className="ap-form-grid">
+        {!hideAssignTo && (
         <div className="ap-field ap-field-center">
             <label className="ap-label">Recurring Task</label>
             <label className="ap-toggle">
@@ -532,13 +533,15 @@ export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submit
               <span className="ap-toggle-label">{form.is_recurring ? "Yes" : "No"}</span>
             </label>
           </div>
+        )}
 
         {/* ── Title + Assigned To ── */}
-        <div className="ap-form-row ap-col-2">
+        <div className={`ap-form-row ${hideAssignTo ? "ap-col-1" : "ap-col-2"}`}>
           <div className="ap-field">
             <label className="ap-label">Task Title <span className="ap-req">*</span></label>
             <input className="ap-input" name="title" value={form.title} onChange={handleFormChange} placeholder="e.g. Inspect electrical panel"/>
           </div>
+          {!hideAssignTo && (
           <div className="ap-field">
             <label className="ap-label">Assign To <span className="ap-req">*</span></label>
             <select
@@ -557,9 +560,10 @@ export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submit
                 ))}
             </select>
           </div>
+          )}
         </div>
 
-         {!form.is_recurring && (
+         {!hideAssignTo && !form.is_recurring && (
             <PendingTaskQueuePanel
               assignedTo={form.assigned_to}
               employeeName={employees.find((e) => e.username === form.assigned_to)?.name}
@@ -642,7 +646,7 @@ export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submit
         </div>
 
         {/* ── Recurrence settings ── */}
-        {form.is_recurring && (
+        {!hideAssignTo && form.is_recurring && (
           <>
             <div className="ap-recurrence-divider">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
@@ -854,8 +858,8 @@ export function TaskForm({ form, handleFormChange, setForm, handleSubmit, submit
           </button>
           <button className="ap-btn-primary" onClick={async () => { const ok = await handleSubmit(); if(ok && onSuccess) onSuccess(); }} disabled={submitting}>
             {submitting
-              ? <><span className="ap-mini-spinner"/> Assigning…</>
-              : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg> Assign Task</>}
+              ? <><span className="ap-mini-spinner"/> {submittingLabel}</>
+              : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg> {submitLabel}</>}
           </button>
         </div>
       </div>

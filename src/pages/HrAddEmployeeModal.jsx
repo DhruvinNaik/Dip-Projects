@@ -131,6 +131,20 @@ export default function HrAddEmployeeModal({ onClose, onSaved }) {
 
   const setField = (key, value) => setForm((prev) => ({ ...prev, [key]: value }));
 
+  // Default password = text before "." in the username + "123" (e.g. john.d -> john123).
+  // Keeps following the username until the user edits the password by hand.
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const onUsernameChange = (value) => {
+    setForm((prev) => {
+      const next = { ...prev, username: value };
+      if (!passwordTouched) {
+        const base = value.trim().split(".")[0];
+        next.password = base ? `${base}123` : "";
+      }
+      return next;
+    });
+  };
+
   const save = async () => {
     if (!form.name.trim() || !form.username.trim() || !form.password.trim() || !form.role.trim() || !form.department.trim()) {
       setError("Fill name, username, password, role, and department.");
@@ -209,7 +223,7 @@ export default function HrAddEmployeeModal({ onClose, onSaved }) {
           </label>
           <label>
             Username *
-            <input value={form.username} autoComplete="off" onChange={(event) => setField("username", event.target.value)} placeholder="e.g. john.doe" />
+            <input value={form.username} autoComplete="off" onChange={(event) => onUsernameChange(event.target.value)} placeholder="e.g. john.doe" />
           </label>
           <label>
             Password *
@@ -218,7 +232,10 @@ export default function HrAddEmployeeModal({ onClose, onSaved }) {
                 type={showPassword ? "text" : "password"}
                 autoComplete="new-password"
                 value={form.password}
-                onChange={(event) => setField("password", event.target.value)}
+                onChange={(event) => {
+                  setPasswordTouched(true);
+                  setField("password", event.target.value);
+                }}
                 placeholder="••••••••"
               />
               <button type="button" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? "Hide password" : "Show password"}>

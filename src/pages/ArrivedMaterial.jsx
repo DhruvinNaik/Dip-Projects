@@ -5,6 +5,7 @@ import { BillActions, fillArrivedMaterialBook, uploadMaterialBill } from "../com
 import "./ArrivedMaterial.css";
 
 function assignedSites(user) {
+  
   const out = [];
   const push = (value) => {
     const name = String(value || "").trim();

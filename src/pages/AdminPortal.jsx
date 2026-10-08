@@ -5,6 +5,7 @@ import PortalSettingsMenu from "../components/PortalSettingsMenu";
 import PortalSwitcher from "../components/PortalSwitcher";
 import { supabase } from "../supabase";
 import WeeklyTasksPanel, { TaskModeToggle } from "./WeeklyTasksPanel";
+import { applyLeaveTaskAction } from "./leaveUtils";
 import { useRecurringTasks } from "../hooks/useRecurringTasks";
 import SiteReport from "./Sitereport";
 import "./AdminPortal.css";
@@ -635,28 +636,6 @@ const VERIFICATION_STATUS_STYLE = {
   completed: { bg: "#f0fdf4", color: "#16a34a", border: "#bbf7d0", label: "Verified" },
   correction_sent: { bg: "#fef2f2", color: "#dc2626", border: "#fecaca", label: "Correction Sent" },
 };
-async function transferTasksToProxy(supabaseClient, leave, userMap, notify) {
-  if (!leave.proxy_user_name || !leave.from_date || !leave.to_date) return;
-
-  const { data: tasksToMove, error } = await supabaseClient
-    .from("tasks")
-    .select("id, title")
-    .eq("assigned_to", leave.user_name)
-    .neq("status", "completed")
-    .gte("due_date", leave.from_date)
-    .lte("due_date", leave.to_date);
-
-  if (error || !tasksToMove?.length) return;
-
-  const ids = tasksToMove.map((t) => t.id);
-  await supabaseClient.from("tasks").update({ assigned_to: leave.proxy_user_name }).in("id", ids);
-
-  notify?.(
-    `${tasksToMove.length} task${tasksToMove.length > 1 ? "s" : ""} transferred to ${
-      userMap[leave.proxy_user_name] || leave.proxy_name || leave.proxy_user_name
-    } for the leave period.`,
-  );
-}
 function isLeaveFullyApproved(leave) {
   const proxyDone = !leave.proxy_user_name || leave.proxy_approved === true;
   if (!proxyDone) return false;
@@ -7996,7 +7975,8 @@ if (!error && verification.task_id) {
   showToast("success", "Leave approved.");
 
   if (isLeaveFullyApproved(updatedLeave)) {
-    await transferTasksToProxy(supabase, updatedLeave, userMap, (msg) => showToast("success", msg));
+    const taskMsg = await applyLeaveTaskAction(supabase, updatedLeave);
+    if (taskMsg) showToast("success", taskMsg);
   }
 };
 

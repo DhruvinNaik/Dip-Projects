@@ -10,6 +10,13 @@ import { canAccessPortal, filterNav, hasPermission, hasAdminCapability } from ".
 import { pickPermissionFields } from "../lib/permissions";
 import PortalSwitcher from "../components/PortalSwitcher";
 import {
+  HALF_DAY_LABELS,
+  LEAVE_TASK_ACTIONS,
+  leaveDayCount,
+  fetchLeaveWindowTasks,
+  applyLeaveTaskAction,
+} from "./leaveUtils";
+import {
   resolveApprovalChain,
   deriveLeaveStatus,
   mergeRejectionReason,
@@ -554,11 +561,16 @@ function getAdminRejectionReason(leave) {
     return leave.rejection_reason;
   return null;
 }
+
+
 // ── Leave status helpers ───────────────────────────────────────────────────
 function computeLeaveStatus(leave) {
   if (leave.level_approver_user_name || leave.head_approver_user_name) {
     const s = (leave.status || "").toLowerCase();
-    if (s === "approved" || s === "rejected") return s;
+    // Proxy approval is required in addition to the approver chain.
+    if (leave.proxy_approved === false || s === "rejected") return "rejected";
+    const proxyOk = !leave.proxy_user_name || leave.proxy_approved === true;
+    if (s === "approved" && proxyOk) return "approved";
     return "pending";
   }
   if (leave.admin_approved === false || leave.proxy_approved === false)
@@ -1754,6 +1766,7 @@ function MyLeaveTable({ leaves }) {
     </div>
   );
 }
+
 function NewTicketsTable({ tickets, onSolve, updatingId, canSolve }) {
   const fmt = (d) =>
     d
@@ -2558,13 +2571,7 @@ function LeaveCard({
           year: "numeric",
         })
       : "—";
-  const days =
-    leave.from_date && leave.to_date
-      ? Math.ceil(
-          (new Date(leave.to_date) - new Date(leave.from_date)) /
-            (1000 * 60 * 60 * 24),
-        ) + 1
-      : null;
+  const days = leave.from_date && leave.to_date ? leaveDayCount(leave) : null;
   const reasons = Array.isArray(leave.rejection_reason)
     ? leave.rejection_reason.filter((r) => r && typeof r === "object")
     : [];
@@ -3264,7 +3271,10 @@ const [leaveForm, setLeaveForm] = useState({
   to_date: "",
   reason: "",
   proxy_user_name: "",
+  duration: "full", // "full" | "half"
+  half_period: "first", // "first" (until 2 PM) | "second" (from 2 PM)
 });
+const [taskActionModal, setTaskActionModal] = useState(null); // { tasks, action }
 
  useEffect(() => {
     const s = localStorage.getItem("user");
@@ -4128,17 +4138,34 @@ const handleStatusChange = async (taskId, newStatus, e) => {
       );
     }
   };
+const EMPTY_LEAVE_FORM = {
+  leave_type: "", from_date: "", to_date: "", reason: "",
+  proxy_user_name: "", duration: "full", half_period: "first",
+};
+
+// Step 1: validate, then show the final "what happens to my tasks?" step.
 const handleLeaveSubmit = async () => {
+  const isHalf = leaveForm.duration === "half";
+  const to = isHalf ? leaveForm.from_date : leaveForm.to_date;
   if (!leaveForm.leave_type)
     return showToast("error", "Please select a leave type.");
   if (!leaveForm.from_date)
     return showToast("error", "Please select a start date.");
-  if (!leaveForm.to_date)
+  if (!to)
     return showToast("error", "Please select an end date.");
-  if (new Date(leaveForm.to_date) < new Date(leaveForm.from_date))
+  if (new Date(to) < new Date(leaveForm.from_date))
     return showToast("error", "End date must be after start date.");
   if (!leaveForm.proxy_user_name)
     return showToast("error", "Please select a proxy for your leave.");
+
+  const tasks = await fetchLeaveWindowTasks(supabase, user.user_name, leaveForm.from_date, to);
+  setTaskActionModal({ tasks, action: "proxy" });
+};
+
+// Step 2: actually submit with the chosen task handling.
+const submitLeave = async (taskAction) => {
+  const isHalf = leaveForm.duration === "half";
+  const toDate = isHalf ? leaveForm.from_date : leaveForm.to_date;
 
   const site = user.site_names?.[0] || user.site_name || null;
   setLeaveSubmitting(true);
@@ -4154,8 +4181,12 @@ const handleLeaveSubmit = async () => {
     site_name: site,
     leave_type: leaveForm.leave_type,
     from_date: leaveForm.from_date,
-    to_date: leaveForm.to_date,
+    to_date: toDate,
     reason: leaveForm.reason.trim() || null,
+    is_half_day: isHalf,
+    half_day_period: isHalf ? leaveForm.half_period : null,
+    leave_days: isHalf ? 0.5 : leaveDayCount({ from_date: leaveForm.from_date, to_date: toDate }),
+    task_action: taskAction,
     level_approver_user_name: chain.levelApprover?.username || null,
     level_approver_role: chain.levelApprover?.role || null,
     level_approver_name: chain.levelApprover?.name || null,
@@ -4182,7 +4213,8 @@ const handleLeaveSubmit = async () => {
         ? "Leave application submitted and auto-approved!"
         : "Leave application submitted — awaiting proxy and admin approval.",
     );
-    setLeaveForm({ leave_type: "", from_date: "", to_date: "", reason: "", proxy_user_name: "" });
+    setLeaveForm({ ...EMPTY_LEAVE_FORM });
+    setTaskActionModal(null);
     fetchLeaves(user);
     setActiveTab("my-leaves");
   }
@@ -4218,7 +4250,8 @@ const handleProxyApprove = async (leave) => {
 
   // Both sides now approved — hand off the applicant's tasks for the leave window.
   if (isLeaveFullyApproved(updatedLeave)) {
-    await transferTasksToProxy(updatedLeave);
+    const msg = await applyLeaveTaskAction(supabase, updatedLeave);
+    if (msg) showToast("success", msg);
   }
 };
 function isLeaveFullyApproved(leave) {
@@ -4234,30 +4267,6 @@ function isLeaveFullyApproved(leave) {
   return leave.admin_approved === true;
 }
 
-
-async function transferTasksToProxy(leave) {
-  if (!leave.proxy_user_name || !leave.from_date || !leave.to_date) return;
-
-  const { data: tasksToMove, error } = await supabase
-    .from("tasks")
-    .select("id, title")
-    .eq("assigned_to", leave.user_name)
-    .neq("status", "completed")
-    .gte("due_date", leave.from_date)
-    .lte("due_date", leave.to_date);
-
-  if (error || !tasksToMove?.length) return;
-
-  const ids = tasksToMove.map((t) => t.id);
-  await supabase.from("tasks").update({ assigned_to: leave.proxy_user_name }).in("id", ids);
-
-  showToast(
-    "success",
-    `${tasksToMove.length} task${tasksToMove.length > 1 ? "s" : ""} transferred to ${
-      userMap[leave.proxy_user_name] || leave.proxy_name || leave.proxy_user_name
-    } for the leave period.`,
-  );
-}
 
 const confirmProxyReject = async () => {
   if (!rejectReason.trim()) return;
@@ -4365,13 +4374,15 @@ const myTaskActivityMaps = useMemo(
   OFFICE_PROFILE_ITEM,
   ].find((n) => n.key === activeTab);
 
-  const proxyPendingCount = proxyLeaves.filter(
-    (l) =>
-      (l.level_approver_user_name === user.user_name &&
-        l.level_approved === null) ||
-      (l.head_approver_user_name === user.user_name &&
-        l.head_approved === null),
-  ).length;
+  // Leaves waiting on MY decision — as proxy, level approver or head approver.
+  const proxyPendingCount = proxyLeaves.filter((l) => {
+    if (computeLeaveStatus(l) !== "pending") return false;
+    return (
+      (l.proxy_user_name === user.user_name && l.proxy_approved === null) ||
+      (l.level_approver_user_name === user.user_name && l.level_approved === null) ||
+      (l.head_approver_user_name === user.user_name && l.head_approved === null)
+    );
+  }).length;
   const unreadReschedules = myReschedules.filter(
     (r) =>
       (r.status === "approved" || r.status === "rejected") &&
@@ -4521,20 +4532,84 @@ case "all-tasks": {
                   ))}
                 </select>
               </div>
-              <div className="lv-field">
+              <div className="lv-field lv-col-2">
+                <label className="lv-label">Duration</label>
+                <div style={{ display: "inline-flex", background: "#f1f5f9", borderRadius: 10, padding: 3, gap: 2, alignSelf: "flex-start" }}>
+                  {[
+                    { key: "full", label: "Full day(s)" },
+                    { key: "half", label: "Half day" },
+                  ].map((o) => {
+                    const on = leaveForm.duration === o.key;
+                    return (
+                      <button
+                        key={o.key}
+                        type="button"
+                        onClick={() =>
+                          setLeaveForm((p) => ({ ...p, duration: o.key, to_date: o.key === "half" ? p.from_date : p.to_date }))
+                        }
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 6, border: "none", cursor: "pointer",
+                          fontSize: 12.5, fontWeight: 700, padding: "6px 14px", borderRadius: 8,
+                          background: on ? "#fff" : "transparent", color: on ? "#7c3aed" : "#64748b",
+                          boxShadow: on ? "0 1px 3px rgba(0,0,0,.12)" : "none",
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="9" />
+                          {o.key === "half" && <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" />}
+                        </svg>
+                        {o.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div className={`lv-field${leaveForm.duration === "half" ? " lv-col-2" : ""}`}>
                 <label className="lv-label">
-                  From Date <span className="lv-req">*</span>
+                  {leaveForm.duration === "half" ? "Date" : "From Date"} <span className="lv-req">*</span>
                 </label>
                 <input
                   className="lv-input"
                   type="date"
                   value={leaveForm.from_date}
                   onChange={(e) =>
-                    setLeaveForm((p) => ({ ...p, from_date: e.target.value }))
+                    setLeaveForm((p) => ({
+                      ...p,
+                      from_date: e.target.value,
+                      to_date: p.duration === "half" ? e.target.value : p.to_date,
+                    }))
                   }
                   min={new Date().toISOString().slice(0, 10)}
                 />
               </div>
+              {leaveForm.duration === "half" && (
+                <div className="lv-field lv-col-2">
+                  <label className="lv-label">Which half? <span className="lv-req">*</span></label>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {Object.entries(HALF_DAY_LABELS).map(([key, label]) => {
+                      const on = leaveForm.half_period === key;
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => setLeaveForm((p) => ({ ...p, half_period: key }))}
+                          style={{
+                            flex: "1 1 200px", textAlign: "left", cursor: "pointer", padding: "10px 12px", borderRadius: 10,
+                            border: `1.5px solid ${on ? "#7c3aed" : "#e2e8f0"}`, background: on ? "#f5f3ff" : "#fff",
+                            color: on ? "#6d28d9" : "#475569", fontSize: 13, fontWeight: 600,
+                          }}
+                        >
+                          {label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
+                    The day is split at 2:00 PM. A half day counts as 0.5 day of leave.
+                  </span>
+                </div>
+              )}
+              {leaveForm.duration !== "half" && (
               <div className="lv-field">
                 <label className="lv-label">
                   To Date <span className="lv-req">*</span>
@@ -4551,7 +4626,18 @@ case "all-tasks": {
                   }
                 />
               </div>
-              {leaveForm.from_date &&
+              )}
+              {leaveForm.duration === "half" && leaveForm.from_date && (
+                <div className="lv-duration-preview lv-col-2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M12 6v6l4 2" />
+                  </svg>
+                  0.5 day of leave
+                </div>
+              )}
+              {leaveForm.duration !== "half" &&
+                leaveForm.from_date &&
                 leaveForm.to_date &&
                 new Date(leaveForm.to_date) >=
                   new Date(leaveForm.from_date) && (
@@ -4616,13 +4702,7 @@ case "all-tasks": {
                 <button
                   className="lv-btn-reset"
                   onClick={() =>
-                    setLeaveForm({
-                      leave_type: "",
-                      from_date: "",
-                      to_date: "",
-                      reason: "",
-                      proxy_user_name: "",
-                    })
+                    setLeaveForm({ ...EMPTY_LEAVE_FORM })
                   }
                 >
                   Reset
@@ -10174,6 +10254,61 @@ case "all-drawings":
                 onClick={confirmProxyReject}
               >
                 Confirm Reject
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {taskActionModal && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 10060, background: "rgba(15,23,42,.5)", backdropFilter: "blur(3px)", display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "72px 16px 16px", overflowY: "auto" }}
+          onClick={(e) => { if (e.target === e.currentTarget && !leaveSubmitting) setTaskActionModal(null); }}
+        >
+          <div style={{ background: "#fff", borderRadius: 16, width: "100%", maxWidth: 520, boxShadow: "0 20px 60px rgba(0,0,0,.25)", overflow: "hidden" }}>
+            <div style={{ padding: "16px 20px", borderBottom: "1px solid #f1f5f9", fontWeight: 700, color: "#1e293b" }}>
+              What should happen to your tasks?
+            </div>
+            <div style={{ padding: "16px 20px", display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontSize: 12.5, color: "#64748b" }}>
+                {taskActionModal.tasks.length
+                  ? `${taskActionModal.tasks.length} open task${taskActionModal.tasks.length > 1 ? "s" : ""} fall during this leave. This applies once both your proxy and the admin approve.`
+                  : "You have no open tasks due during this leave. Your choice is saved in case any are assigned before it starts."}
+              </div>
+              {taskActionModal.tasks.length > 0 && (
+                <ul style={{ margin: 0, paddingLeft: 18, fontSize: 12.5, color: "#475569", maxHeight: 110, overflowY: "auto" }}>
+                  {taskActionModal.tasks.map((t) => (
+                    <li key={t.id}>{t.title}</li>
+                  ))}
+                </ul>
+              )}
+              {[
+                { key: "proxy", sub: `Hand them to ${proxyCandidates.find((u) => u.username === leaveForm.proxy_user_name)?.name || "your proxy"} for the leave period.`, path: <><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></> },
+                { key: "reschedule", sub: "Move their due date to the day after your leave ends.", path: <><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /></> },
+                { key: "hold", sub: "Pause the timers of tasks you have started; continue them when you are back.", path: <><rect x="6" y="4" width="4" height="16" /><rect x="14" y="4" width="4" height="16" /></> },
+              ].map((o) => {
+                const on = taskActionModal.action === o.key;
+                return (
+                  <button
+                    key={o.key}
+                    type="button"
+                    onClick={() => setTaskActionModal((m) => ({ ...m, action: o.key }))}
+                    style={{ display: "flex", alignItems: "center", gap: 12, textAlign: "left", cursor: "pointer", padding: "12px 14px", borderRadius: 12, border: `1.5px solid ${on ? "#7c3aed" : "#e2e8f0"}`, background: on ? "#f5f3ff" : "#fff" }}
+                  >
+                    <span style={{ width: 34, height: 34, borderRadius: 10, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", background: on ? "#7c3aed" : "#f1f5f9", color: on ? "#fff" : "#64748b" }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{o.path}</svg>
+                    </span>
+                    <span>
+                      <span style={{ display: "block", fontSize: 13.5, fontWeight: 700, color: on ? "#6d28d9" : "#1e293b" }}>{LEAVE_TASK_ACTIONS[o.key]}</span>
+                      <span style={{ display: "block", fontSize: 12, color: "#94a3b8", marginTop: 2 }}>{o.sub}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 20px", borderTop: "1px solid #f1f5f9" }}>
+              <button type="button" className="lv-btn-reset" onClick={() => setTaskActionModal(null)} disabled={leaveSubmitting}>Back</button>
+              <button type="button" className="lv-btn-submit" onClick={() => submitLeave(taskActionModal.action)} disabled={leaveSubmitting}>
+                {leaveSubmitting ? "Submitting…" : "Submit Leave"}
               </button>
             </div>
           </div>

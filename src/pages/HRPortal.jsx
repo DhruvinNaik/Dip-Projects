@@ -11,7 +11,8 @@ import HrInsurance, { daysUntilRenewal, renewalStatus } from "./HrInsurance";
 import HrExpenses from "./HrExpenses";
 import HrAssets from "./HrAssets";
 import "./HRPortal.css";
-
+import HrRecruitment from "./HrRecruitment";
+import { HrBirthdayOverview, HrBirthdays } from "./HrBirthdays";
 const MENU = [
   { label: "Overview", icon: "grid", section: "Main", color: "#be3d3d" },
   { label: "Employees", icon: "users", section: "Main", color: "#2563eb" },
@@ -872,6 +873,7 @@ export default function HRPortal() {
     const key = normalizeUsername(username);
     if (key && !trackerEmployees.has(key)) trackerEmployees.set(key, { name: leave.name || username || "Unnamed employee", username });
   });
+
   const trackerRows = [...trackerEmployees.entries()]
     .map(([key, employee]) => {
       const approvedLeaves = leaveTrackerRecords.filter((leave) => normalizeUsername(leave.user_name || leave.name) === key && String(leave.status || "").trim().toLowerCase() === "approved");
@@ -1250,33 +1252,10 @@ export default function HRPortal() {
                     Open insurance tracker <Icon name="arrow" size={14} />
                   </button>
                 </article>
-                <article className="hr-panel hr-birthday-panel">
-                  <div className="hr-panel-heading">
-                    <div>
-                      <h2>Coming up</h2>
-                      <p>Birthday data is not available</p>
-                    </div>
-                    <Icon name="gift" size={19} />
-                  </div>
-                  <div className="hr-birthday-date">
-                    <strong>—</strong>
-                    <span>
-                      <b>No birth date field</b>
-                      <small>
-                        Add one to employee records to enable this card
-                      </small>
-                    </span>
-                  </div>
-                  <div className="hr-birthday-names">
-                    <p>Connect a birthday field when the HR schema is ready</p>
-                  </div>
-                  <button
-                    className="hr-panel-link"
-                    onClick={() => selectItem("Birthdays")}
-                  >
-                    Open birthday calendar <Icon name="arrow" size={14} />
-                  </button>
-                </article>
+                <HrBirthdayOverview
+                  employees={overview?.users || []}
+                  onOpen={() => selectItem("Birthdays")}
+                />
               </div>
             </>
             ) : activeItem === "Employees" ? (
@@ -1590,6 +1569,10 @@ export default function HRPortal() {
               search={search}
               onAddEmployee={() => selectItem("New Recruitment")}
             />
+          ) : activeItem === "Birthdays" ? (
+            <HrBirthdays employees={overview?.users || []} search={search} />
+          ) : activeItem === "New Recruitment" ? (
+            <HrRecruitment search={search} />
           ) : (
             <div className="hr-empty-view">
               <div className="hr-empty-icon">

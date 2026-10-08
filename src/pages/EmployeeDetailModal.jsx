@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "../supabase";
 import { replaceEmployeeDocument } from "../lib/hrStorage";
+import { HrBirthdayCardPopup } from "./HrBirthdays";
 
 const DOC_TYPES = [
   { key: "photo", label: "Photo" },
@@ -268,6 +269,7 @@ export default function EmployeeDetailModal({ employee, onClose, onUpdated }) {
   const [editingKey, setEditingKey] = useState("");
   const [draft, setDraft] = useState("");
   const [savingKey, setSavingKey] = useState("");
+  const [showBdayCard, setShowBdayCard] = useState(false);
   const fileRefs = useRef({});
 
   const username = pick(record, "username", "user_name") || "";
@@ -661,7 +663,7 @@ export default function EmployeeDetailModal({ employee, onClose, onUpdated }) {
                 ))}
               </div>
               <div className="edm-actions">
-                <button type="button" className="edm-action-btn" onClick={() => handleAction("Birthday card")}>
+                <button type="button" className="edm-action-btn" onClick={() => setShowBdayCard(true)}>
                   <SvgIcon name="gift" size={15} /> Birthday card
                 </button>
                 <button type="button" className="edm-action-btn" onClick={() => handleAction("Exp Certificate")}>
@@ -673,7 +675,7 @@ export default function EmployeeDetailModal({ employee, onClose, onUpdated }) {
               </div>
             </div>
           )}
-
+ 
           {tab === "attendance" && (
             <div className="edm-section">
               <div className="edm-att-summary">
@@ -840,7 +842,12 @@ export default function EmployeeDetailModal({ employee, onClose, onUpdated }) {
             </div>
           )}
         </div>
-
+          {showBdayCard && (
+            <HrBirthdayCardPopup
+              employee={{ ...record, ...(profile || {}), name: fullName, username }}
+              onClose={() => setShowBdayCard(false)}
+            />
+          )}
         {toast && <div className="edm-toast">{toast}</div>}
       </div>
     </div>

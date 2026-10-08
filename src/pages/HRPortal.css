@@ -522,28 +522,28 @@
 .hr-status-pill.is-absent { color: #dc2626; background: #fef2f2; border: 1px solid #fecaca; }
 .hr-status-pill.is-remote { color: #7c3aed; background: #f5f3ff; border: 1px solid #ddd6fe; }
 
-.hr-birthday-panel .hr-birthday-date {
+.hrb-overview-panel {
+  display: flex;
+  flex-direction: column;
+}
+.hrb-overview-list {
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0 0 8px;
+}
+.hrb-overview-list li {
   display: flex;
   align-items: center;
-  gap: 14px;
-  padding: 14px;
-  border-radius: 10px;
-  background: #fce7f3;
-  border: 1px solid #f0a8c8;
-  margin-bottom: 12px;
-}
-.hr-birthday-date strong {
-  font-size: 28px;
-  color: #db2777;
-  font-weight: 700;
-}
-.hr-birthday-date b { display: block; font-size: 13px; color: #1e293b; }
-.hr-birthday-date small { display: block; font-size: 12px; color: #94a3b8; margin-top: 2px; }
-.hr-birthday-names p {
+  gap: 10px;
+  color: #1e293b;
   font-size: 13px;
-  color: #64748b;
-  margin: 0 0 12px;
-  line-height: 1.5;
+}
+.hrb-overview-panel > .hr-panel-link {
+  width: 100%;
+  justify-content: center;
+  margin-top: 8px;
 }
 
 .hr-list-empty {
@@ -1274,7 +1274,6 @@
   gap: 14px;
 }
 .hr-leave-panel .hr-panel-link,
-.hr-birthday-panel .hr-panel-link,
 .hr-reminder-panel .hr-panel-link {
   margin-top: 12px;
   width: 100%;
@@ -2962,3 +2961,782 @@
   .hrae-form { grid-template-columns: 1fr; }
 }
 
+
+/* ── Recruitment inbox (append to HRPortal.css) ───────────────────────── */
+.hrr { display: flex; flex-direction: column; gap: 14px; }
+.hrr-connect {
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  padding: 44px 28px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 2px 10px rgba(15,23,42,.06);
+}
+.hrr-connect-ico,
+.hrr-title-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: #fff7ed;
+  color: #ea580c;
+  flex-shrink: 0;
+}
+.hrr-connect-ico { width: 56px; height: 56px; border-radius: 14px; }
+.hrr-connect h2 { margin: 4px 0 0; font-size: 18px; color: #0f172a; }
+.hrr-connect p { margin: 0 0 6px; max-width: 440px; font-size: 13.5px; line-height: 1.55; color: #64748b; }
+.hrr-connect .hr-data-alert { max-width: 440px; }
+
+.hrr-toolbar,
+.hrr-title,
+.hrr-toolbar-actions { display: flex; align-items: center; }
+.hrr-toolbar {
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: 0 2px 10px rgba(15,23,42,.05);
+}
+.hrr-title { gap: 12px; min-width: 0; }
+.hrr-title h2 { margin: 0; font-size: 16px; color: #0f172a; }
+.hrr-title p { margin: 2px 0 0; font-size: 12px; color: #64748b; }
+.hrr-toolbar-actions { gap: 10px; flex-wrap: wrap; }
+.hrr-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+.hrr-field select {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  color: #1e293b;
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  height: 34px;
+  outline: none;
+  cursor: pointer;
+}
+.hrr-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #475569;
+  cursor: pointer;
+}
+
+.hrr-card {
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  box-shadow: 0 2px 10px rgba(15,23,42,.05);
+  overflow: hidden;
+}
+.hrr-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+.hrr-card-head small { font-weight: 500; font-size: 11.5px; color: #94a3b8; }
+.hrr-table-wrap { overflow: auto; }
+.hrr-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.hrr-table th {
+  text-align: left;
+  font-size: 11px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #94a3b8;
+  padding: 12px 14px;
+  background: #f8fafc;
+  white-space: nowrap;
+}
+.hrr-table td {
+  padding: 12px 14px;
+  border-top: 1px solid #f1f5f9;
+  color: #1e293b;
+  vertical-align: middle;
+}
+.hrr-table tr.is-unread td:first-child { box-shadow: inset 3px 0 0 #ea580c; }
+.hrr-nowrap { white-space: nowrap; }
+.hrr-muted { color: #94a3b8; }
+.hrr-person { display: flex; align-items: center; gap: 10px; min-width: 190px; }
+.hrr-avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  background: #fed7aa;
+  color: #9a3412;
+  flex-shrink: 0;
+}
+.hrr-person strong { display: block; font-size: 13px; color: #0f172a; text-transform: capitalize; }
+.hrr-person small { display: block; font-size: 11px; color: #94a3b8; margin-top: 1px; }
+.hrr-subject {
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hrr-position {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.hrr-files { display: flex; flex-wrap: wrap; gap: 6px; }
+.hrr-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 190px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #334155;
+  border-radius: 8px;
+  padding: 4px 9px 4px 5px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hrr-file:hover { border-color: #93c5fd; color: #1d4ed8; background: #eff6ff; }
+.hrr-file:disabled { opacity: .6; cursor: wait; }
+.hrr-file i {
+  font-style: normal;
+  font-family: 'DM Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 4px;
+  padding: 3px 4px;
+}
+.hrr-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hrr-actions { display: flex; gap: 6px; align-items: center; white-space: nowrap; }
+.hrr-view,
+.hrr-gmail {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 6px 10px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.hrr-view { border: 1px solid #ddd6fe; background: #f5f3ff; color: #6d28d9; }
+.hrr-gmail { border: 1px solid #fed7aa; background: #fff7ed; color: #c2410c; }
+.hrr-more { display: flex; justify-content: center; padding: 12px; border-top: 1px solid #eef2f7; }
+
+.hrr-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 18px;
+}
+.hrr-modal {
+  width: min(680px, 100%);
+  max-height: min(92vh, 860px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(15,23,42,.22);
+  overflow: hidden;
+}
+.hrr-modal-head,
+.hrr-modal-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+}
+.hrr-modal-head { background: linear-gradient(90deg, #c2410c, #ea580c); color: #fff; }
+.hrr-modal-head strong { display: block; font-size: 15px; text-transform: capitalize; }
+.hrr-modal-head small { display: block; font-size: 12px; opacity: .85; margin-top: 2px; }
+.hrr-close {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 8px;
+  background: rgba(255,255,255,.18);
+  color: #fff;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hrr-modal-body { padding: 16px; overflow: auto; display: flex; flex-direction: column; gap: 10px; }
+.hrr-modal-body h3 { margin: 0; font-size: 15px; color: #0f172a; }
+.hrr-modal-meta { margin: 0; font-size: 12px; color: #64748b; }
+.hrr-modal-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #334155;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 14px;
+  max-height: 340px;
+  overflow: auto;
+}
+.hrr-modal-foot { border-top: 1px solid #e2e8f0; justify-content: flex-end; }
+.hrr-modal-foot a { text-decoration: none; }
+.hrr-toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #fff;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  z-index: 12100;
+}
+
+/* ── Birthday wishes (append to HRPortal.css) ─────────────────────────── */
+.hrb {
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 2px 10px rgba(15,23,42,.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+.hrb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.hrb-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hrb-person h2 { margin: 0; font-size: 16px; color: #0f172a; }
+.hrb-person p { margin: 2px 0 0; font-size: 12.5px; color: #64748b; }
+.hrb-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-weight: 700;
+  font-size: 14px;
+  background: #fce7f3;
+  color: #be185d;
+  flex-shrink: 0;
+}
+.hrb-avatar.sm { width: 30px; height: 30px; font-size: 11px; }
+
+.hrb-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.hrb-tab {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hrb-tab.active { background: #fdf2f8; border-color: #f9a8d4; color: #be185d; }
+
+.hrb-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+.hrb-card {
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+.hrb-card img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.hrb-card figcaption {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+.hrb-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hrb-wa,
+.hrb-dl {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.hrb-wa { flex: 1; border: none; background: #16a34a; color: #fff; }
+.hrb-wa:hover { background: #15803d; }
+.hrb-dl { border: 1px solid var(--hr-border); background: #fff; color: #334155; }
+.hrb-dl:hover { background: #eef1f5; }
+.hrb-wa:focus-visible,
+.hrb-dl:focus-visible,
+.hrb-tab:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+.hrb-toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 460px);
+  background: #0f172a;
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  z-index: 12100;
+}
+
+.hrb-page { display: flex; flex-direction: column; gap: 14px; }
+.hrb-upcoming { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.hrb-upcoming li {
+  display: grid;
+  grid-template-columns: 30px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eef2f7;
+  font-size: 13px;
+  color: #475569;
+}
+.hrb-upcoming li:first-child { border-top: 0; }
+.hrb-upcoming strong { color: #0f172a; font-weight: 600; }
+.hrb-upcoming em { font-style: normal; font-size: 11.5px; font-weight: 700; color: #be185d; min-width: 74px; text-align: right; }
+
+/* ── Birthday card popup (append to HRPortal.css) ─────────────────────── */
+.hrbp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12050;
+  background: rgba(15, 23, 42, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+}
+.hrbp-modal {
+  width: min(560px, 100%);
+  max-height: min(88vh, 760px);
+  background: #fff;
+  border-radius: 14px;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, .28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.hrbp-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.hrbp-head strong { display: block; font-size: 14px; color: #0f172a; }
+.hrbp-head small { display: block; margin-top: 2px; font-size: 12px; color: #64748b; }
+.hrbp-head-actions { display: flex; align-items: center; gap: 8px; }
+.hrbp-shuffle {
+  border: 1px solid var(--hr-border, #b8c0cc);
+  background: #eef1f5;
+  color: #334155;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.hrbp-close {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 8px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+.hrbp-grid {
+  padding: 14px;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.hrbp-card {
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+.hrbp-card img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.hrbp-card figcaption {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: #64748b;
+}
+.hrbp-empty { padding: 28px 18px; text-align: center; font-size: 13px; color: #64748b; line-height: 1.5; }
+.hrbp-shuffle:focus-visible,
+.hrbp-close:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+@media (max-width: 420px) {
+  .hrbp-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Popup: icon buttons on the card image (append to HRPortal.css) ───── */
+.hrbp-card { position: relative; }
+.hrbp-fabs {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1;
+}
+.hrbp-fab {
+  width: 38px;
+  height: 38px;
+  border: 2px solid rgba(255, 255, 255, .9);
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, .35);
+}
+.hrbp-fab.is-wa { background: #16a34a; }
+.hrbp-fab.is-wa:hover { background: #15803d; }
+.hrbp-fab.is-dl { background: #0f172a; }
+.hrbp-fab.is-dl:hover { background: #1e293b; }
+.hrbp-fab:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+/* ── Birthday wishes (append to HRPortal.css) ─────────────────────────── */
+.hrb {
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 2px 10px rgba(15,23,42,.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+.hrb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.hrb-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hrb-person h2 { margin: 0; font-size: 16px; color: #0f172a; }
+.hrb-person p { margin: 2px 0 0; font-size: 12.5px; color: #64748b; }
+.hrb-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-weight: 700;
+  font-size: 14px;
+  background: #fce7f3;
+  color: #be185d;
+  flex-shrink: 0;
+}
+.hrb-avatar.sm { width: 30px; height: 30px; font-size: 11px; }
+
+.hrb-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.hrb-tab {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hrb-tab.active { background: #fdf2f8; border-color: #f9a8d4; color: #be185d; }
+
+.hrb-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+.hrb-card {
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+.hrb-card img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.hrb-card figcaption {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+.hrb-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hrb-wa,
+.hrb-dl {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.hrb-wa { flex: 1; border: none; background: #16a34a; color: #fff; }
+.hrb-wa:hover { background: #15803d; }
+.hrb-dl { border: 1px solid var(--hr-border); background: #fff; color: #334155; }
+.hrb-dl:hover { background: #eef1f5; }
+.hrb-wa:focus-visible,
+.hrb-dl:focus-visible,
+.hrb-tab:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+.hrb-toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 460px);
+  background: #0f172a;
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  z-index: 12100;
+}
+
+.hrb-page { display: flex; flex-direction: column; gap: 14px; }
+.hrb-upcoming { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.hrb-upcoming li {
+  display: grid;
+  grid-template-columns: 30px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eef2f7;
+  font-size: 13px;
+  color: #475569;
+}
+.hrb-upcoming li:first-child { border-top: 0; }
+.hrb-upcoming strong { color: #0f172a; font-weight: 600; }
+.hrb-upcoming em { font-style: normal; font-size: 11.5px; font-weight: 700; color: #be185d; min-width: 74px; text-align: right; }
+.hrb-dob { display: block; font-size: 11.5px; font-weight: 500; color: #94a3b8; margin-top: 1px; }
+/* ── Birthday wishes (append to HRPortal.css) ─────────────────────────── */
+.hrb {
+  background: #fff;
+  border: 1px solid var(--hr-border);
+  border-radius: 14px;
+  padding: 18px 20px 20px;
+  box-shadow: 0 2px 10px rgba(15,23,42,.06);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  position: relative;
+}
+.hrb-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.hrb-person { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.hrb-person h2 { margin: 0; font-size: 16px; color: #0f172a; }
+.hrb-person p { margin: 2px 0 0; font-size: 12.5px; color: #64748b; }
+.hrb-avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: 'DM Mono', monospace;
+  font-weight: 700;
+  font-size: 14px;
+  background: #fce7f3;
+  color: #be185d;
+  flex-shrink: 0;
+}
+.hrb-avatar.sm { width: 30px; height: 30px; font-size: 11px; }
+
+.hrb-tabs { display: flex; gap: 6px; flex-wrap: wrap; }
+.hrb-tab {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hrb-tab.active { background: #fdf2f8; border-color: #f9a8d4; color: #be185d; }
+
+.hrb-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+}
+.hrb-card {
+  margin: 0;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+}
+.hrb-card img { display: block; width: 100%; aspect-ratio: 4 / 5; object-fit: cover; }
+.hrb-card figcaption {
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+.hrb-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+.hrb-wa,
+.hrb-dl {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+}
+.hrb-wa { flex: 1; border: none; background: #16a34a; color: #fff; }
+.hrb-wa:hover { background: #15803d; }
+.hrb-dl { border: 1px solid var(--hr-border); background: #fff; color: #334155; }
+.hrb-dl:hover { background: #eef1f5; }
+.hrb-wa:focus-visible,
+.hrb-dl:focus-visible,
+.hrb-tab:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
+
+.hrb-toast {
+  position: fixed;
+  bottom: 22px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 460px);
+  background: #0f172a;
+  color: #fff;
+  border-radius: 12px;
+  padding: 10px 16px;
+  font-size: 12.5px;
+  font-weight: 600;
+  z-index: 12100;
+}
+
+.hrb-page { display: flex; flex-direction: column; gap: 14px; }
+.hrb-upcoming { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.hrb-upcoming li {
+  display: grid;
+  grid-template-columns: 30px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-top: 1px solid #eef2f7;
+  font-size: 13px;
+  color: #475569;
+}
+.hrb-upcoming li:first-child { border-top: 0; }
+.hrb-upcoming strong { color: #0f172a; font-weight: 600; }
+.hrb-upcoming em { font-style: normal; font-size: 11.5px; font-weight: 700; color: #be185d; min-width: 74px; text-align: right; }
+.hrb-dob { display: block; font-size: 11.5px; font-weight: 500; color: #94a3b8; margin-top: 1px; }
+
+/* ── WhatsApp paste instructions (append to HRPortal.css) ─────────────── */
+.hrb-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+  width: min(92vw, 420px);
+  background: #fff;
+  border: 1px solid #bbf7d0;
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, .3);
+  padding: 14px 16px 16px;
+  z-index: 12100;
+}
+.hrb-notice strong { display: block; font-size: 14px; color: #15803d; }
+.hrb-notice p { margin: 6px 0 12px; font-size: 13px; line-height: 1.5; color: #334155; }
+.hrb-notice-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.hrb-notice-actions .hrb-wa { flex: 1 1 auto; }

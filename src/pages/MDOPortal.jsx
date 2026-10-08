@@ -15,6 +15,7 @@ import EmployeeAttendanceReport from "./EmployeeAttendanceReport.jsx";
 import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
 import "./SiteMyTasks.css";
 
+import { applyLeaveTaskAction } from "./leaveUtils";
 // ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://efqfjfthsleymhljswcq.supabase.co";
 const SUPABASE_ANON =
@@ -1172,22 +1173,6 @@ function isLeaveFullyApproved(leave) {
   return leave.admin_approved === true;
 }
 
-async function transferTasksToProxy(leave, showToast) {
-  if (!leave.proxy_user_name || !leave.from_date || !leave.to_date) return;
-  const { data: tasksToMove, error } = await supabase
-    .from("tasks")
-    .select("id, title")
-    .eq("assigned_to", leave.user_name)
-    .neq("status", "completed")
-    .gte("due_date", leave.from_date)
-    .lte("due_date", leave.to_date);
-  if (error || !tasksToMove?.length) return;
-  const ids = tasksToMove.map((t) => t.id);
-  await supabase.from("tasks").update({ assigned_to: leave.proxy_user_name }).in("id", ids);
-  showToast?.(
-    `${tasksToMove.length} task${tasksToMove.length > 1 ? "s" : ""} transferred to you for the leave period.`,
-  );
-}
 function ProxyLeaveApproval({ user }) {
   const [leaves, setLeaves] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1227,7 +1212,8 @@ function ProxyLeaveApproval({ user }) {
     setLeaves((prev) => prev.map((l) => (l.id === leave.id ? updated : l)));
     showToast("Leave approved.");
     if (isLeaveFullyApproved(updated)) {
-      await transferTasksToProxy(updated, showToast);
+      const taskMsg = await applyLeaveTaskAction(supabase, updated);
+      if (taskMsg) showToast(taskMsg);
     }
   };
 

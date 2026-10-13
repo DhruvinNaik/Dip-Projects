@@ -2102,6 +2102,9 @@ function SectionBlock({ title, children, defaultOpen = false }) {
     const opening = !open;
     setOpen(opening);
     if (opening) {
+      window.dispatchEvent(
+        new CustomEvent("form-guide-section-open", { detail: { section: ref.current } }),
+      );
       setTimeout(() => {
         const el = ref.current;
         if (!el) return;

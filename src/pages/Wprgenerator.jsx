@@ -2163,6 +2163,9 @@ function Acc({ id, icon, title, sub, open, onToggle, children }) {
     const opening = !open;
     onToggle();
     if (opening) {
+      window.dispatchEvent(
+        new CustomEvent("form-guide-section-open", { detail: { section: ref.current } }),
+      );
       setTimeout(() => {
         const el = ref.current;
         if (!el) return;

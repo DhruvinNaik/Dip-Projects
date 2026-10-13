@@ -1319,6 +1319,20 @@ async function getLogoBase64() {
   });
 }
 
+// html2canvas renders from a cloned copy of the whole page. Force that copy to
+// the light theme so the app's dark-mode CSS never leaks into the PDF.
+function forceLightThemeInClone(clonedDoc) {
+  clonedDoc.querySelectorAll("[data-theme]").forEach((el) => el.setAttribute("data-theme", "light"));
+  const root = clonedDoc.documentElement;
+  root.setAttribute("data-theme", "light");
+  root.classList.remove("dark");
+  root.style.colorScheme = "light";
+  if (clonedDoc.body) {
+    clonedDoc.body.classList.remove("dark");
+    clonedDoc.body.style.colorScheme = "light";
+  }
+}
+
 async function generateEveningPdf(payload, onProgress) {
   await ensurePdfDeps();
   const logoBase64 = await getLogoBase64();
@@ -1398,6 +1412,7 @@ async function generateEveningPdf(payload, onProgress) {
       windowWidth: 794,
       scrollX: 0,
       scrollY: 0,
+      onclone: forceLightThemeInClone,
     });
     document.body.removeChild(wrap);
     return canvas;
@@ -4549,6 +4564,7 @@ const handleSummaryKeyDown = (e) => {
       });
 
       if (error) throw new Error(`DB insert failed: ${error.message}`);
+      window.dispatchEvent(new CustomEvent("site-onboarding-action", { detail: { action: "report" } }));
       setSubmitted(true);
       draftOpenedRef.current = false;
     } catch (err) {
@@ -4677,6 +4693,7 @@ async function uploadBatch(items, uploadFn, concurrency = 4) {
         created_at: new Date().toISOString(),
       });
       if (insertErr) throw new Error(`DB insert failed: ${insertErr.message}`);
+      window.dispatchEvent(new CustomEvent("site-onboarding-action", { detail: { action: "report" } }));
 
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -4906,6 +4923,7 @@ async function uploadBatch(items, uploadFn, concurrency = 4) {
         created_at: new Date().toISOString(),
       });
       if (error) throw new Error(`DB insert failed: ${error.message}`);
+      window.dispatchEvent(new CustomEvent("site-onboarding-action", { detail: { action: "report" } }));
 
       // Build WhatsApp text and open
       const text = buildWhatsAppText(payload);

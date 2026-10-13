@@ -14,7 +14,7 @@ const SUBMIT_STEPS = [
 ];
 
 // Add this component before SiteReport default export
-function SubmitOverlay({ currentStep }) {
+function SubmitOverlay({ currentStep, title }) {
   const idx = SUBMIT_STEPS.findIndex(s => s.key === currentStep);
   return (
     <div style={{
@@ -23,7 +23,7 @@ function SubmitOverlay({ currentStep }) {
       flexDirection: "column", zIndex: 9999, gap: 20, backdropFilter: "blur(4px)",
     }}>
       <div style={{ width: 44, height: 44, borderRadius: "50%", border: "4px solid #e2e8f0", borderTopColor: "#800000", animation: "spin .7s linear infinite" }} />
-      <div style={{ fontSize: 18, fontWeight: 800, color: "#800000" }}>Generating Site Visit Report…</div>
+     <div style={{ fontSize: 18, fontWeight: 800, color: "#800000" }}>Generating {title}…</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", maxWidth: 340 }}>
         {SUBMIT_STEPS.map((s, i) => {
           const isDone    = i < idx;
@@ -197,6 +197,9 @@ function Section({ num, title, children, openSections, toggleSection }) {
     const opening = !open;
     toggleSection(num);
     if (opening) {
+      window.dispatchEvent(
+        new CustomEvent("form-guide-section-open", { detail: { section: ref.current } }),
+      );
       setTimeout(() => {
         const el = ref.current;
         if (!el) return;
@@ -303,7 +306,7 @@ function TextArea({ value, onChange, placeholder }) {
 }
 
 // ─── Main component ───────────────────────────────────────────────────────────
-export default function SiteReport({ user }) {
+export default function SiteReport({ user, reportTitle = "Site Visit Report" }) {
   const [form, setForm] = useState({
     visit_date: new Date().toISOString().split("T")[0],
     visit_time: "",
@@ -572,6 +575,7 @@ const handleSubmit = async () => {
         key_instructions:        form.key_instructions,
           visitType,
     visitors: visitType === "group" ? visitors.filter(v => v.name.trim()) : [],
+        reportTitle,
       },
       photos,
       logoAsset
@@ -600,7 +604,7 @@ const handleSubmit = async () => {
     setTimeout(() => URL.revokeObjectURL(a.href), 10000);
 
     setSubmitResult({ type: "success", msg: "Report generated and downloaded successfully!" });
-    showToast("success", "Site Visit Report submitted successfully!");
+    showToast("success", `${reportTitle} submitted successfully!`);
 
     // Reset form
     setForm({
@@ -1053,7 +1057,7 @@ setVisitors([{ name: "", designation: "" }]);
         </div>
       )}
       {/* Submit overlay */}
-{submitting && submitStage && <SubmitOverlay currentStep={submitStage} />}
+{submitting && submitStage && <SubmitOverlay currentStep={submitStage} title={reportTitle} />}
 
 {/* Lightbox */}
 {lightbox && (() => {

@@ -906,6 +906,8 @@ const { data, error } = await supabase.from("attendance").insert({
 
     if (error) { showMsg("error", "Clock-in failed: " + error.message); return; }
 
+    window.dispatchEvent(new CustomEvent("site-onboarding-action", { detail: { action: "attendance" } }));
+
     showMsg(
       ciStatus.type === "ontime" ? "success" : "warn",
       ciStatus.type === "ontime"

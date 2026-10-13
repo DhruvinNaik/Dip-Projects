@@ -1,0 +1,797 @@
+/* ── Site Tour Guide & Spotlight Styles ── */
+
+.stg-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  animation: stgFadeIn 0.2s ease-out;
+}
+
+.stg-modal {
+  background: #ffffff;
+  border-radius: 16px;
+  max-width: 480px;
+  width: 100%;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.25);
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+  animation: stgSlideUp 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stg-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+  color: #ffffff;
+}
+
+.stg-bot-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #0f766e, #14b8a6);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 4px 10px rgba(15, 118, 110, 0.3);
+}
+
+.stg-modal-titles {
+  flex: 1;
+}
+
+.stg-modal-title {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.stg-modal-sub {
+  font-size: 12px;
+  color: #94a3b8;
+  margin-top: 2px;
+}
+
+.stg-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s;
+}
+
+.stg-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
+}
+
+/* Chat Input Bar */
+.stg-chat-form {
+  padding: 14px 20px 8px;
+}
+
+.stg-input-wrap {
+  display: flex;
+  align-items: center;
+  background: #f8fafc;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 4px 6px 4px 12px;
+  transition: border-color 0.15s;
+}
+
+.stg-input-wrap:focus-within {
+  border-color: #0f766e;
+  box-shadow: 0 0 0 3px rgba(15, 118, 110, 0.15);
+}
+
+.stg-search-icon {
+  font-size: 14px;
+  margin-right: 6px;
+}
+
+.stg-chat-input {
+  border: none;
+  background: transparent;
+  outline: none;
+  font-size: 13px;
+  flex: 1;
+  color: #0f172a;
+}
+
+.stg-chat-go-btn {
+  background: #0f766e;
+  color: #ffffff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.stg-chat-go-btn:hover {
+  background: #0d9488;
+}
+
+/* Option Cards List */
+.stg-optin-list {
+  padding: 10px 20px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.stg-optin-heading {
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 2px;
+}
+
+.stg-card-opt {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.stg-card-opt:hover {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  transform: translateX(3px);
+}
+
+.stg-card-badge {
+  font-size: 10.5px;
+  font-weight: 800;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.stg-card-badge.all {
+  background: #0f766e;
+  color: #ffffff;
+}
+.stg-card-badge.clock {
+  background: #eff6ff;
+  color: #2563eb;
+}
+.stg-card-badge.dpr {
+  background: #fdf2f8;
+  color: #db2777;
+}
+.stg-card-badge.leave {
+  background: #f5f3ff;
+  color: #7c3aed;
+}
+.stg-card-badge.wpr {
+  background: #fdf4ff;
+  color: #c026d3;
+}
+.stg-card-badge.svr {
+  background: #ecfdf5;
+  color: #059669;
+}
+.stg-card-badge.head {
+  background: #fff7ed;
+  color: #ea580c;
+}
+.stg-card-badge.material {
+  background: #f0fdf4;
+  color: #16a34a;
+}
+
+.stg-card-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.stg-card-info strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.stg-card-info span {
+  font-size: 11.5px;
+  color: #64748b;
+  margin-top: 1px;
+}
+
+.stg-arrow {
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+/* ── SPOTLIGHT OVERLAY ── */
+.stg-spotlight-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  pointer-events: auto;
+}
+
+/* The dark cutout window with box-shadow mimicking hole */
+.stg-spotlight-hole {
+  position: fixed;
+  border-radius: 10px;
+  box-shadow: 0 0 0 9999px rgba(15, 23, 42, 0.75);
+  border: 2px solid #14b8a6;
+  pointer-events: none;
+  animation: stgPulseGlow 2s infinite ease-in-out;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Floating Popover */
+.stg-popover {
+  position: fixed;
+  width: 390px;
+  max-width: calc(100vw - 32px);
+  background: #ffffff;
+  border-radius: 14px;
+  box-shadow: 0 20px 48px rgba(0, 0, 0, 0.32);
+  border: 1px solid #e2e8f0;
+  z-index: 20001;
+  padding: 16px 18px;
+  animation: stgPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.stg-welcome-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 21000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.58);
+  backdrop-filter: blur(3px);
+  animation: stgFadeIn 0.18s ease-out;
+}
+
+.stg-welcome-modal {
+  position: relative;
+  width: min(100%, 460px);
+  padding: 34px 36px 30px;
+  border: 1px solid #dce9e7;
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+  animation: stgSlideUp 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.stg-welcome-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #64748b;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.stg-welcome-close:hover {
+  background: #f1f5f4;
+  color: #0f172a;
+}
+
+.stg-welcome-mark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 22px;
+  border-radius: 14px;
+  background: #e8f4f1;
+  color: #0f766e;
+}
+
+.stg-welcome-eyebrow {
+  margin: 0 0 8px;
+  color: #0f766e;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+
+.stg-welcome-modal h2 {
+  margin: 0;
+  color: #142b2b;
+  font-size: 25px;
+  line-height: 1.25;
+  font-weight: 750;
+}
+
+.stg-welcome-modal > p:last-of-type {
+  margin: 12px 0 26px;
+  color: #536463;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.stg-welcome-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.stg-welcome-actions button {
+  min-height: 42px;
+  padding: 0 17px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stg-welcome-primary {
+  border: 1px solid #0f766e;
+  background: #0f766e;
+  color: #fff;
+}
+
+.stg-welcome-primary:hover {
+  border-color: #0d625c;
+  background: #0d625c;
+}
+
+.stg-welcome-secondary {
+  border: 1px solid #d5e1df;
+  background: #fff;
+  color: #425452;
+}
+
+.stg-welcome-secondary:hover {
+  background: #f5f8f7;
+}
+
+.stg-checklist-wrap {
+  position: fixed;
+  right: 88px;
+  bottom: 20px;
+  z-index: 1750;
+  font-family: inherit;
+}
+
+.stg-checklist-launcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 0 13px 0 10px;
+  border: 1px solid #d7e5e2;
+  border-radius: 9px;
+  background: #fff;
+  color: #184c49;
+  box-shadow: 0 5px 18px rgba(15, 23, 42, 0.16);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.stg-checklist-launcher:hover {
+  border-color: #0f766e;
+}
+
+.stg-checklist-launcher-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #e8f4f1;
+  color: #0f766e;
+  font-size: 13px;
+}
+
+.stg-checklist {
+  position: absolute;
+  right: 0;
+  bottom: 52px;
+  width: min(310px, calc(100vw - 24px));
+  padding: 16px;
+  border: 1px solid #dce7e5;
+  border-radius: 11px;
+  background: #fff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2);
+  color: #172e2c;
+}
+
+.stg-checklist-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.stg-checklist-head div {
+  display: grid;
+  gap: 4px;
+}
+
+.stg-checklist-head strong {
+  font-size: 14px;
+}
+
+.stg-checklist-head span,
+.stg-checklist-percent {
+  color: #647775;
+  font-size: 11px;
+}
+
+.stg-checklist-head button {
+  width: 28px;
+  height: 28px;
+  margin: -5px -6px 0 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #647775;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.stg-checklist-progress {
+  height: 6px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e8efed;
+}
+
+.stg-checklist-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: #0f766e;
+  transition: width 0.25s ease;
+}
+
+.stg-checklist-percent {
+  margin-top: 6px;
+  text-align: right;
+}
+
+.stg-checklist ul {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding: 0;
+  list-style: none;
+}
+
+.stg-checklist li {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #465957;
+  font-size: 12px;
+}
+
+.stg-checklist li > span {
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  flex: 0 0 17px;
+  border: 1px solid #c7d5d2;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 10px;
+}
+
+.stg-checklist li.done > span {
+  border-color: #0f766e;
+  background: #0f766e;
+}
+
+.stg-checklist li.done {
+  color: #173e3b;
+}
+
+.stg-checklist-restart {
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid #cfe0dd;
+  border-radius: 7px;
+  background: #f4f8f7;
+  color: #0f625c;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.stg-checklist-restart:hover {
+  background: #e8f4f1;
+}
+
+.stg-welcome-modal button:focus-visible,
+.stg-checklist button:focus-visible,
+.stg-checklist-launcher:focus-visible,
+.stg-popover button:focus-visible,
+.stg-modal button:focus-visible,
+.stg-modal input:focus-visible {
+  outline: 3px solid rgba(15, 118, 110, 0.35);
+  outline-offset: 2px;
+}
+
+.stg-howto-card {
+  margin-top: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-left: 3.5px solid #0f766e;
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.stg-howto-header {
+  font-size: 11.5px;
+  font-weight: 800;
+  color: #0f766e;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.stg-howto-list {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stg-howto-item {
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: #334155;
+  font-weight: 500;
+}
+
+.stg-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.stg-popover-tag {
+  font-size: 11px;
+  font-weight: 700;
+  background: #0f766e;
+  color: #ffffff;
+  padding: 2px 8px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.stg-popover-progress {
+  font-size: 11.5px;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.stg-popover-close {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 4px;
+}
+
+.stg-popover-close:hover {
+  color: #0f172a;
+}
+
+.stg-popover-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 6px;
+}
+
+.stg-popover-desc {
+  font-size: 12.5px;
+  color: #475569;
+  line-height: 1.5;
+  margin: 0 0 14px;
+}
+
+.stg-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.stg-btn-prev {
+  background: #f1f5f9;
+  color: #475569;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.stg-btn-prev:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.stg-btn-skip {
+  border: 0;
+  background: transparent;
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.stg-btn-skip:hover {
+  color: #0f766e;
+}
+
+.stg-btn-next {
+  background: #0f766e;
+  color: #ffffff;
+  border: none;
+  padding: 6px 14px;
+  border-radius: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.stg-btn-next:hover {
+  background: #0d9488;
+}
+
+.stg-step-dots {
+  display: flex;
+  gap: 4px;
+}
+
+.stg-dot {
+  padding: 0;
+  border: 0;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #cbd5e1;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.stg-dot.active {
+  background: #0f766e;
+  width: 14px;
+  border-radius: 3px;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 600px) {
+  .stg-welcome-modal {
+    padding: 30px 22px 22px;
+    border-radius: 14px;
+  }
+  .stg-welcome-modal h2 {
+    font-size: 22px;
+  }
+  .stg-welcome-actions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .stg-checklist-wrap {
+    right: 12px;
+    bottom: 82px;
+  }
+  .stg-checklist {
+    right: 0;
+    bottom: 50px;
+  }
+  .stg-modal {
+    max-width: calc(100vw - 20px);
+    border-radius: 14px;
+    max-height: 88vh;
+    display: flex;
+    flex-direction: column;
+  }
+  .stg-modal-header {
+    padding: 14px 16px;
+  }
+  .stg-modal-title {
+    font-size: 14.5px;
+  }
+  .stg-chat-form {
+    padding: 10px 14px 6px;
+  }
+  .stg-optin-list {
+    padding: 8px 14px 16px;
+    max-height: 52vh;
+  }
+  .stg-popover {
+    position: fixed !important;
+    bottom: 12px !important;
+    left: 10px !important;
+    right: 10px !important;
+    width: auto !important;
+    max-width: none !important;
+    top: auto !important;
+    max-height: 65vh;
+    overflow-y: auto;
+    border-radius: 12px;
+    padding: 14px 15px;
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.45);
+    z-index: 20001;
+  }
+  .stg-popover-title {
+    font-size: 13.5px;
+  }
+  .stg-popover-desc {
+    font-size: 11.5px;
+    margin-bottom: 8px;
+  }
+  .stg-howto-card {
+    padding: 8px 10px;
+    margin-top: 6px;
+  }
+  .stg-howto-item {
+    font-size: 11px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stg-welcome-backdrop,
+  .stg-welcome-modal,
+  .stg-popover,
+  .stg-spotlight-hole {
+    animation: none !important;
+    transition: none !important;
+  }
+  .stg-checklist-progress span {
+    transition: none;
+  }
+}

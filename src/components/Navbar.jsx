@@ -3,7 +3,14 @@ import { useNavigate } from "react-router-dom";
 import logo from "../assets/logo.png";
 import "./Navbar.css";
 
-export default function Navbar({ onMenuToggle, menuOpen, showQrScanner = false, qrActive = false }) {
+export default function Navbar({
+  onMenuToggle,
+  menuOpen,
+  showQrScanner = false,
+  qrActive = false,
+  showTourGuide = false,
+  onTourClick,
+}) {
   const navigate = useNavigate();
   const user = JSON.parse(localStorage.getItem("user"));
   const [showLogoutModal, setShowLogoutModal] = useState(false);
@@ -69,7 +76,7 @@ export default function Navbar({ onMenuToggle, menuOpen, showQrScanner = false, 
         </div>
       )}
 
-      <nav className="app-navbar">
+      <nav className="app-navbar site-navbar">
         <div className="navbar-left">
           {onMenuToggle && (
             <button className="navbar-ham" onClick={onMenuToggle} aria-label="Toggle sidebar">
@@ -91,7 +98,30 @@ export default function Navbar({ onMenuToggle, menuOpen, showQrScanner = false, 
           {user && (
             <>
               <div className="navbar-divider"/>
-              <div className="navbar-user">
+              <div className="navbar-user" data-tour="navbar-user">
+                {showTourGuide && (
+                  <button
+                    type="button"
+                    className="navbar-sg-btn"
+                    title="Site Guide — Interactive Tour & Chat Bot"
+                    aria-label="Site Guide Tour"
+                    data-tour="navbar-sg"
+                    onClick={() => {
+                      if (onTourClick) {
+                        onTourClick();
+                      } else {
+                        window.dispatchEvent(new CustomEvent("open-site-tour"));
+                      }
+                    }}
+                  >
+                    <span className="navbar-sg-dot" />
+                    <svg className="navbar-sg-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                      <path d="m12 3 1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3Z" />
+                      <path d="m19 3 .7 2.1L22 6l-2.3.9L19 9l-.7-2.1L16 6l2.3-.9L19 3Z" />
+                    </svg>
+                    <span className="navbar-sg-label">SG</span>
+                  </button>
+                )}
                 <div className="navbar-avatar">
                   {user.name?.charAt(0).toUpperCase()}
                 </div>
@@ -99,8 +129,9 @@ export default function Navbar({ onMenuToggle, menuOpen, showQrScanner = false, 
                   <button
                     type="button"
                     className={`navbar-qr${qrActive ? " act" : ""}`}
-                    title="Scan QR for attendance"
-                    aria-label="Scan QR for attendance"
+                    title="Scan QR for EA meeting attendance"
+                    aria-label="Scan QR for EA meeting attendance"
+                    data-tour="navbar-qr"
                     onClick={() => navigate("/site/qr-scan")}
                   >
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

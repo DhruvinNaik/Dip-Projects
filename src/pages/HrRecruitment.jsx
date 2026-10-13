@@ -17,6 +17,7 @@ const RANGES = [
   { value: 0, label: "All time" },
 ];
 
+
 function initialsFor(name) {
   return (
     String(name || "NA")

@@ -20,6 +20,8 @@ import { computeMonthlyLeaveBalance, isMonthlyLeaveRole } from "./leaveUtils.js"
 import WeeklyPlanReport from "./WeeklyPlanReport.jsx";
 import ArrivedMaterial from "./ArrivedMaterial.jsx";
 import MonthEndReport from "./MonthEndReport.jsx";
+import SiteTourGuide from "../components/SiteTourGuide";
+import FormGuideAssistant from "../components/FormGuideAssistant";
 
 // ─── Supabase ────────────────────────────────────────────────────────────────
 const SUPABASE_URL = "https://efqfjfthsleymhljswcq.supabase.co";
@@ -1276,6 +1278,7 @@ const submit = async () => {
       setErr(error.message);
       return;
     }
+    window.dispatchEvent(new CustomEvent("site-onboarding-action", { detail: { action: "leave" } }));
     setBalanceRefresh((p) => p + 1);
     setSubmitted(true);
   };
@@ -1640,6 +1643,7 @@ function SniButton({ itemKey, icon, label, isActive, onClick, badge, style }) {
     <button
       className={`sni${isActive ? " act" : ""}`}
       onClick={onClick}
+      data-tour={`nav-${itemKey}`}
       style={{
         "--nav-bg": `${color}18`,
         "--nav-color": color,
@@ -1793,7 +1797,7 @@ const markLeavesSeen = useCallback(async (u) => {
   };
   const fetchSiteReports = useCallback(async (u) => {
     const role = u?.role?.toLowerCase().trim();
-    if (!u || (role !== "project head" && role !== "site incharge")) return;
+    if (!u || !["project head", "site incharge", "site coordinator"].includes(role)) return;
     setLoadingReports(true);
 
     const sites =
@@ -2003,6 +2007,13 @@ useEffect(() => {
   };
   const activeItem = ALL_ITEMS.find((i) => i.key === activeTab);
 
+  // Only the Site Engineer role sees this as a Quality Audit Report.
+  // Heads, incharges, coordinators and everyone else keep "Site Visit Report".
+  const isSiteEngineer =
+    String(user?.role || "").toLowerCase().trim().replace(/[_\s]+/g, " ") === "site engineer";
+  const SITE_REPORT_TITLE = isSiteEngineer ? "Quality Audit Report" : "Site Visit Report";
+  const labelFor = (item) => (item.key === "site-report" ? SITE_REPORT_TITLE : item.label);
+
   if (!user)
     return (
       <>
@@ -2033,7 +2044,7 @@ useEffect(() => {
       case "wpr-generator":
         return <WprGenerator user={user} supabase={supabase} />;
       case "site-report":
-        return <SiteReport user={user} />;
+        return <SiteReport user={user} reportTitle={SITE_REPORT_TITLE} />;
       // case "material-requirement":
       //   return (
       //     <MatRequirement user={user} onDotSeen={() => matUnseen.refresh()} />
@@ -2059,7 +2070,7 @@ useEffect(() => {
         );
       case "report-submissions": {
         const role = user?.role?.toLowerCase().trim();
-        if (role !== "project head" && role !== "site incharge") return null;
+        if (!["project head", "site incharge", "site coordinator"].includes(role)) return null;
 
         const fmtD = (d) =>
           d
@@ -2859,6 +2870,7 @@ useEffect(() => {
           onMenuToggle={() => setSidebarOpen((p) => !p)}
           menuOpen={sidebarOpen}
           showQrScanner
+          showTourGuide
         />
 
         <div className={`body${sidebarOpen ? " sidebar-open" : ""}`}>
@@ -2873,6 +2885,7 @@ useEffect(() => {
           {/* Sidebar */}
           <aside
             className={`sidebar${sidebarOpen ? "" : " closed"}`}
+            data-tour="site-sidebar"
           >
             <PortalSwitcher
               items={[
@@ -2899,7 +2912,7 @@ useEffect(() => {
                       key={n.key}
                       itemKey={n.key}
                       icon={n.icon}
-                      label={n.label}
+                      label={labelFor(n)}
                       isActive={activeTab === n.key}
                       isHovered={hoveredNavKey === n.key}
                       onEnter={() => setHoveredNavKey(n.key)}
@@ -2928,7 +2941,7 @@ useEffect(() => {
                             key={c.key}
                             itemKey={c.key}
                             icon={c.icon}
-                            label={c.label}
+                            label={labelFor(c)}
                             isActive={activeTab === c.key}
                             isHovered={hoveredNavKey === c.key}
                             onEnter={() => setHoveredNavKey(c.key)}
@@ -2948,8 +2961,9 @@ useEffect(() => {
                 );
               })}
 
-              {(user?.role?.toLowerCase().trim() === "project head" ||
-                user?.role?.toLowerCase().trim() === "site incharge") && (
+              {["project head", "site incharge", "site coordinator"].includes(
+                user?.role?.toLowerCase().trim(),
+              ) && (
                 <SniButton
                   itemKey="report-submissions"
                   icon={REPORT_SUBMISSIONS_ITEM.icon}
@@ -2975,11 +2989,11 @@ useEffect(() => {
           </aside>
 
           {/* Main */}
-          <main className="main" ref={mainRef}>
+          <main className="main" ref={mainRef} data-form-guide-root>
             <div className="card">
               <div className="card-hdr">
                 <div className="card-ico">{activeItem?.icon}</div>
-                <span className="card-title">{activeItem?.label}</span>
+                <span className="card-title">{activeItem ? labelFor(activeItem) : ""}</span>
               </div>
               {renderContent()}
             </div>
@@ -2987,6 +3001,17 @@ useEffect(() => {
         </div>
       </div>
       <PortalFloaters showBot botScope="site" />
+      <FormGuideAssistant activeTab={activeTab} />
+      <SiteTourGuide
+        user={user}
+        isApprover={isApprover}
+        onEnsureSidebarOpen={() => setSidebarOpen(true)}
+        onNavigateTab={(tab) => {
+          nav(tab);
+          // auto-expand groups if target is a child
+          setExpanded((p) => ({ ...p, leave: true, reports: true }));
+        }}
+      />
     </>
   );
 }

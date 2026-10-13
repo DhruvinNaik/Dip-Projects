@@ -171,6 +171,20 @@ async function getSvrLogoBase64(logoSrc) {
   });
 }
 
+// html2canvas renders from a cloned copy of the whole page. Force that copy to
+// the light theme so the app's dark-mode CSS never leaks into the PDF.
+function forceLightThemeInClone(clonedDoc) {
+  clonedDoc.querySelectorAll("[data-theme]").forEach((el) => el.setAttribute("data-theme", "light"));
+  const root = clonedDoc.documentElement;
+  root.setAttribute("data-theme", "light");
+  root.classList.remove("dark");
+  root.style.colorScheme = "light";
+  if (clonedDoc.body) {
+    clonedDoc.body.classList.remove("dark");
+    clonedDoc.body.style.colorScheme = "light";
+  }
+}
+
 // ── Render one HTML chunk → canvas ───────────────────────────────────────────
 async function renderChunk(html) {
   const wrap = document.createElement("div");
@@ -213,6 +227,7 @@ async function renderChunk(html) {
     windowWidth:     794,
     scrollX:         0,
     scrollY:         0,
+    onclone:         forceLightThemeInClone,
   });
   document.body.removeChild(wrap);
   return canvas;
@@ -330,9 +345,13 @@ export async function generateSiteReportPDF(formData, photos, logoSrc) {
     day: "2-digit", month: "short", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
-  const safeSite = (formData.site_name || "site").replace(/[\s/\\:*?"<>|]/g, "_");
-  const fileName = `SVR_${safeSite}_${formData.visit_date}.pdf`;
+  const reportTitle  = (formData.reportTitle || "Site Visit Report").trim();
+const titleUpper   = reportTitle.toUpperCase();
+const titleSpaced  = titleUpper.split(" ").map(w => w.split("").join(" ")).join(" &nbsp; ");
+const titleInitials = reportTitle.split(" ").map(w => w[0]).join("").toUpperCase(); // SVR or QAR
 
+const safeSite = (formData.site_name || "site").replace(/[\s/\\:*?"<>|]/g, "_");
+const fileName = `${titleInitials}_${safeSite}_${formData.visit_date}.pdf`;
   // ── 1. COVER ──────────────────────────────────────────────────────────────
   const coverHtml = `
     <div class="cover">
@@ -351,9 +370,9 @@ export async function generateSiteReportPDF(formData, photos, logoSrc) {
           <div class="doc-sub">${esc(formData.reporter_name)} · ${esc(dispDate)}</div>
         </div>
       </div>
-      <div class="cover-doc-type">O F F I C I A L &nbsp; S I T E &nbsp; V I S I T &nbsp; R E P O R T</div>
-      <div class="cover-main-title">SITE VISIT REPORT</div>
-      <div class="cover-subtitle">An official site visit report prepared by the Project Management Consultant.</div>
+      <div class="cover-doc-type">O F F I C I A L &nbsp; ${titleSpaced}</div>
+<div class="cover-main-title">${esc(titleUpper)}</div>
+<div class="cover-subtitle">An official ${esc(reportTitle.toLowerCase())} prepared by the Project Management Consultant.</div>
       <div class="meta-bar">
         <div class="meta-cell">
           <span class="meta-key">P R O J E C T &nbsp; S I T E</span>
@@ -476,7 +495,7 @@ export async function generateSiteReportPDF(formData, photos, logoSrc) {
       <div class="ty-title">Thank You</div>
       <div class="ty-sub">This report has been prepared to ensure transparency, quality, and continuous improvement at the project site.</div>
       <div class="ty-badge">DIP PROJECTS</div>
-      <div class="ty-meta">Generated ${esc(genTime)} · Site Visit Report · ${esc(formData.site_name)}</div>
+      <div class="ty-meta">Generated ${esc(genTime)} · ${esc(reportTitle)} · ${esc(formData.site_name)}</div>
     </div>`;
   const tyCanvas = await renderChunk(tyHtml);
   const tyPxPerMm  = tyCanvas.width / CONTENT_W;

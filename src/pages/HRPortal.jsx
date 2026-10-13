@@ -223,6 +223,7 @@ function Icon({ name, size = 18 }) {
       aria-hidden="true"
     >
       {paths[name]}
+      
     </svg>
   );
 }

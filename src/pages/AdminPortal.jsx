@@ -6248,6 +6248,8 @@ const [delayReportRows, setDelayReportRows] = useState(null); // null = not gene
 const [delayReportMeta, setDelayReportMeta] = useState(null);
 const [delaySelectedTask, setDelaySelectedTask] = useState(null); // row-click detail popup
 const [drSelectedTask, setDrSelectedTask] = useState(null); // daily report row-click detail popup
+  const [wvRange, setWvRange] = useState("this_month");
+  const [wvExpandedEmp, setWvExpandedEmp] = useState(null);
   const [visibleTaskCount, setVisibleTaskCount] = useState(30);
   const [visibleOverdueCount, setVisibleOverdueCount] = useState(30);
   const [visiblePendingVerificationCount, setVisiblePendingVerificationCount] =
@@ -6933,6 +6935,11 @@ const handleNavClick = (key) => {
         }
         case "daily-report":
           fetchAllTasks();
+          fetchEmployees();
+        break;
+        case "work-verification":
+          fetchAllTasks();
+          fetchPendingVerifications();
           fetchEmployees();
         break;
       default:
@@ -10786,7 +10793,800 @@ const misDepartmentOptions = ["admin", "engineer office", "mdo office"];
     </div>
   );
 }
-      case "work-verification":
+      case "work-verification": {
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        // Day of week (0 = Sun, 1 = Mon...); standard Monday start
+        const currentDay = now.getDay();
+        const distToMon = (currentDay + 6) % 7;
+        const startOfThisWeek = new Date(now.getFullYear(), now.getMonth(), now.getDate() - distToMon, 0, 0, 0);
+        const endOfThisWeek = new Date(startOfThisWeek.getTime() + 7 * 86400000 - 1);
+
+        const startOfLastWeek = new Date(startOfThisWeek.getTime() - 7 * 86400000);
+        const endOfLastWeek = new Date(startOfThisWeek.getTime() - 1);
+
+        const startOfThisMonth = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+        const endOfThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59, 999);
+
+        const startOfLastMonth = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0);
+        const endOfLastMonth = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999);
+
+        let dateFrom = null;
+        let dateTo = null;
+        if (wvRange === "today") {
+          dateFrom = startOfToday;
+          dateTo = endOfToday;
+        } else if (wvRange === "this_week") {
+          dateFrom = startOfThisWeek;
+          dateTo = endOfThisWeek;
+        } else if (wvRange === "last_week") {
+          dateFrom = startOfLastWeek;
+          dateTo = endOfLastWeek;
+        } else if (wvRange === "this_month") {
+          dateFrom = startOfThisMonth;
+          dateTo = endOfThisMonth;
+        } else if (wvRange === "last_month") {
+          dateFrom = startOfLastMonth;
+          dateTo = endOfLastMonth;
+        } // "all_time" => null
+
+        // 1. Identify Office Employees
+        const officeEmployees = employees.filter((e) => {
+          const dept = (e.department || "").toLowerCase().trim();
+          const role = (e.role || "").toLowerCase().trim();
+          if (dept === "site engineer" || role === "site engineer" || role === "site incharge" || role === "site coordinator" || role === "client") {
+            return false;
+          }
+          return true;
+        });
+
+        const officeUsernames = new Set(officeEmployees.map((e) => e.username).filter(Boolean));
+
+        // 2. Build verification map (latest per task)
+        const vMap = {};
+        (pendingVerifications || []).forEach((v) => {
+          if (!v.task_id) return;
+          const prev = vMap[v.task_id];
+          if (!prev || new Date(v.created_at) > new Date(prev.created_at)) {
+            vMap[v.task_id] = v;
+          }
+        });
+
+        // 3. Filter tasks by office employee and selected date range
+        const filteredTasks = (allTasks || []).filter((t) => {
+          if (!t.assigned_to || !officeUsernames.has(t.assigned_to)) return false;
+          if (dateFrom && dateTo) {
+            const taskDate = t.created_at ? new Date(t.created_at) : null;
+            if (!taskDate || taskDate < dateFrom || taskDate > dateTo) return false;
+          }
+          return true;
+        });
+
+        // 4. Aggregate data per office employee
+        const empStats = officeEmployees.map((emp) => {
+          const empTasks = filteredTasks.filter((t) => t.assigned_to === emp.username);
+          const totalTasks = empTasks.length;
+          const completedTasks = empTasks.filter((t) => t.status === "completed").length;
+          const pendingTasks = empTasks.filter((t) => t.status !== "completed").length;
+
+          const verifiedTasks = empTasks.filter((t) => {
+            const v = vMap[t.id];
+            return v && v.status === "completed";
+          }).length;
+
+          const underVerificationTasks = empTasks.filter((t) => {
+            const v = vMap[t.id];
+            return v && (v.status === "pending" || v.status === "correction_sent");
+          }).length;
+
+          // Site / Project breakdown
+          const siteMap = {};
+          empTasks.forEach((t) => {
+            const site = (t.site_name || "General / Head Office").trim();
+            if (!siteMap[site]) {
+              siteMap[site] = { total: 0, completed: 0, pending: 0, verified: 0 };
+            }
+            siteMap[site].total += 1;
+            if (t.status === "completed") {
+              siteMap[site].completed += 1;
+            } else {
+              siteMap[site].pending += 1;
+            }
+            const v = vMap[t.id];
+            if (v && v.status === "completed") {
+              siteMap[site].verified += 1;
+            }
+          });
+
+          return {
+            employee: emp,
+            totalTasks,
+            completedTasks,
+            pendingTasks,
+            verifiedTasks,
+            underVerificationTasks,
+            siteMap,
+            tasks: empTasks,
+          };
+        }).sort((a, b) => {
+          // Sort employees with tasks first, then alphabetically
+          if (b.totalTasks !== a.totalTasks) return b.totalTasks - a.totalTasks;
+          return (a.employee.name || "").localeCompare(b.employee.name || "");
+        });
+
+        // Overall summary cards
+        const grandTotalTasks = empStats.reduce((sum, s) => sum + s.totalTasks, 0);
+        const grandCompleted = empStats.reduce((sum, s) => sum + s.completedTasks, 0);
+        const grandPending = empStats.reduce((sum, s) => sum + s.pendingTasks, 0);
+        const grandVerified = empStats.reduce((sum, s) => sum + s.verifiedTasks, 0);
+        const activeOfficeEmps = empStats.filter((s) => s.totalTasks > 0).length;
+
+        const rangeLabels = {
+          this_month: "This Month",
+          last_month: "Last Month",
+          this_week: "This Week",
+          last_week: "Last Week",
+          today: "Today",
+          all_time: "All Time",
+        };
+
+        return (
+          <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+            {/* Header & Filter Controls */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 14 }}>
+              <div>
+                <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ display: "inline-block", width: 10, height: 10, borderRadius: "50%", background: "#0f766e" }} />
+                  Work & Verification Dashboard
+                </h2>
+                <p style={{ margin: "5px 0 0", fontSize: 13, color: "#64748b" }}>
+                  Office employee tasks completed, site/project totals, pending tasks, and verified status.
+                </p>
+              </div>
+
+              {/* Date Filter Buttons */}
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", background: "#f1f5f9", padding: 4, borderRadius: 10 }}>
+                {[
+                  { key: "today", label: "Today" },
+                  { key: "this_week", label: "This Week" },
+                  { key: "last_week", label: "Last Week" },
+                  { key: "this_month", label: "This Month" },
+                  { key: "last_month", label: "Last Month" },
+                  { key: "all_time", label: "All Time" },
+                ].map((opt) => {
+                  const active = wvRange === opt.key;
+                  return (
+                    <button
+                      key={opt.key}
+                      type="button"
+                      onClick={() => setWvRange(opt.key)}
+                      style={{
+                        padding: "6px 14px",
+                        fontSize: 12.5,
+                        fontWeight: active ? 700 : 500,
+                        color: active ? "#ffffff" : "#475569",
+                        background: active ? "#0f766e" : "transparent",
+                        border: "none",
+                        borderRadius: 7,
+                        cursor: "pointer",
+                        transition: "all 0.15s ease",
+                        boxShadow: active ? "0 2px 6px rgba(15,118,110,0.25)" : "none",
+                      }}
+                    >
+                      {opt.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Metric KPI Cards */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 14 }}>
+              <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: ".05em" }}>Total Tasks</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: "#0f172a", marginTop: 4 }}>{grandTotalTasks}</div>
+                <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>Office employees ({activeOfficeEmps} active)</div>
+              </div>
+
+              <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#16a34a", textTransform: "uppercase", letterSpacing: ".05em" }}>Completed</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: "#16a34a", marginTop: 4 }}>{grandCompleted}</div>
+                <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>
+                  {grandTotalTasks ? `${Math.round((grandCompleted / grandTotalTasks) * 100)}% completion` : "0% completion"}
+                </div>
+              </div>
+
+              <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#0f766e", textTransform: "uppercase", letterSpacing: ".05em" }}>Verified</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: "#0f766e", marginTop: 4 }}>{grandVerified}</div>
+                <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>Approved by verifiers</div>
+              </div>
+
+              <div style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 12, padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#eab308", textTransform: "uppercase", letterSpacing: ".05em" }}>Pending Tasks</div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: "#ca8a04", marginTop: 4 }}>{grandPending}</div>
+                <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>Awaiting employee completion</div>
+              </div>
+            </div>
+
+            {/* SECTION 1: Office Employee Work & Verification Cards */}
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 13, background: "#0f766e", color: "#ffffff", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>1</span>
+                    Office Employees Task & Verification Cards
+                    <span style={{ fontSize: 12, fontWeight: 600, color: "#0f766e", background: "#ccfbf1", padding: "2px 8px", borderRadius: 12 }}>
+                      {rangeLabels[wvRange]}
+                    </span>
+                  </h3>
+                  <p style={{ margin: "3px 0 0", fontSize: 12, color: "#64748b" }}>
+                    Card overview by office employee showing completed, pending, verified status, and site tasks.
+                  </p>
+                </div>
+                <span style={{ fontSize: 12.5, color: "#64748b" }}>
+                  {activeOfficeEmps} with tasks · {officeEmployees.length} total office employees
+                </span>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 }}>
+                {empStats.map((st) => {
+                  const sites = Object.entries(st.siteMap);
+                  const isExpanded = wvExpandedEmp === st.employee.username;
+                  const completionRate = st.totalTasks > 0 ? Math.round((st.completedTasks / st.totalTasks) * 100) : 0;
+
+                  // Initials avatar
+                  const initials = (st.employee.name || "?")
+                    .split(" ")
+                    .filter(Boolean)
+                    .map((n) => n[0])
+                    .slice(0, 2)
+                    .join("")
+                    .toUpperCase();
+
+                  return (
+                    <div
+                      key={st.employee.username}
+                      style={{
+                        background: "#ffffff",
+                        border: isExpanded ? "2px solid #0f766e" : "1px solid #e2e8f0",
+                        borderRadius: 14,
+                        padding: "16px 18px",
+                        boxShadow: isExpanded
+                          ? "0 6px 18px rgba(15,118,110,0.12)"
+                          : "0 2px 6px rgba(0,0,0,0.03)",
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 14,
+                        transition: "all 0.2s ease",
+                      }}
+                    >
+                      {/* Top Header: Avatar, Name, Dept */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                          <div
+                            style={{
+                              width: 44,
+                              height: 44,
+                              borderRadius: "50%",
+                              background: st.totalTasks > 0
+                                ? "linear-gradient(135deg, #0f766e, #0d9488)"
+                                : "#94a3b8",
+                              color: "#ffffff",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontWeight: 800,
+                              fontSize: 15,
+                              letterSpacing: "0.02em",
+                              flexShrink: 0,
+                            }}
+                          >
+                            {initials}
+                          </div>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 14.5, color: "#0f172a" }}>
+                              {st.employee.name}
+                            </div>
+                            <div style={{ fontSize: 11.5, color: "#64748b" }}>
+                              @{st.employee.username} · <span style={{ color: "#0369a1", fontWeight: 600 }}>{st.employee.role || "Office Staff"}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          style={{
+                            padding: "3px 9px",
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 700,
+                            background: "#f1f5f9",
+                            color: "#475569",
+                            textTransform: "uppercase",
+                            letterSpacing: ".04em",
+                          }}
+                        >
+                          {st.employee.department || "Office"}
+                        </span>
+                      </div>
+
+                      {/* Stat Counters 4-Card Box */}
+                      <div
+                        style={{
+                          display: "grid",
+                          gridTemplateColumns: "repeat(4, 1fr)",
+                          gap: 6,
+                          background: "#f8fafc",
+                          borderRadius: 10,
+                          padding: "10px 8px",
+                          textAlign: "center",
+                          border: "1px solid #f1f5f9",
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Total</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>{st.totalTasks}</div>
+                        </div>
+                        <div style={{ borderLeft: "1px solid #e2e8f0" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#16a34a", textTransform: "uppercase" }}>Done</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "#16a34a", marginTop: 2 }}>{st.completedTasks}</div>
+                        </div>
+                        <div style={{ borderLeft: "1px solid #e2e8f0" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#ca8a04", textTransform: "uppercase" }}>Pending</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "#ca8a04", marginTop: 2 }}>{st.pendingTasks}</div>
+                        </div>
+                        <div style={{ borderLeft: "1px solid #e2e8f0" }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#0f766e", textTransform: "uppercase" }}>Verified</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: "#0f766e", marginTop: 2 }}>{st.verifiedTasks}</div>
+                        </div>
+                      </div>
+
+                      {/* Progress Bar: Completed & Verified */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 4 }}>
+                          <span>Completion ({completionRate}%)</span>
+                          <span>{st.completedTasks} of {st.totalTasks} tasks</span>
+                        </div>
+                        <div style={{ height: 6, width: "100%", background: "#e2e8f0", borderRadius: 4, overflow: "hidden" }}>
+                          <div
+                            style={{
+                              height: "100%",
+                              width: `${completionRate}%`,
+                              background: completionRate === 100 ? "#16a34a" : "#0f766e",
+                              borderRadius: 4,
+                              transition: "width 0.3s ease",
+                            }}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Sites / Projects breakdown */}
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#475569", textTransform: "uppercase", letterSpacing: ".04em", marginBottom: 6 }}>
+                          Sites / Projects ({sites.length})
+                        </div>
+                        {sites.length === 0 ? (
+                          <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>
+                            No tasks recorded for this period
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 5, maxHeight: 150, overflowY: "auto" }}>
+                            {sites.map(([siteName, sData]) => (
+                              <div
+                                key={siteName}
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  padding: "5px 8px",
+                                  borderRadius: 7,
+                                  background: "#f8fafc",
+                                  border: "1px solid #e2e8f0",
+                                  fontSize: 12,
+                                }}
+                              >
+                                <span style={{ fontWeight: 600, color: "#334155", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 170 }}>
+                                  {siteName}
+                                </span>
+                                <div style={{ display: "flex", gap: 6, fontSize: 11, fontWeight: 700 }}>
+                                  <span style={{ color: "#0f172a" }}>Tot: {sData.total}</span>
+                                  <span style={{ color: "#16a34a" }}>Done: {sData.completed}</span>
+                                  <span style={{ color: "#ca8a04" }}>Pend: {sData.pending}</span>
+                                  <span style={{ color: "#0f766e" }}>Ver: {sData.verified}</span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Card Footer: Toggle Tasks List */}
+                      <div style={{ marginTop: "auto", paddingTop: 8, borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11.5, color: "#94a3b8" }}>
+                          {st.verifiedTasks} verified by QA/Admin
+                        </span>
+                        {st.totalTasks > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => setWvExpandedEmp(isExpanded ? null : st.employee.username)}
+                            style={{
+                              background: isExpanded ? "#f1f5f9" : "#0f766e",
+                              color: isExpanded ? "#334155" : "#ffffff",
+                              border: "none",
+                              padding: "6px 12px",
+                              borderRadius: 7,
+                              fontSize: 12,
+                              fontWeight: 700,
+                              cursor: "pointer",
+                              transition: "all 0.15s ease",
+                            }}
+                          >
+                            {isExpanded ? "Hide Tasks ▲" : `View ${st.totalTasks} Tasks ▼`}
+                          </button>
+                        ) : (
+                          <span style={{ fontSize: 11.5, color: "#cbd5e1" }}>No Tasks</span>
+                        )}
+                      </div>
+
+                      {/* In-Card Expanded Tasks List */}
+                      {isExpanded && (
+                        <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px dashed #cbd5e1" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f766e", marginBottom: 8 }}>
+                            Assigned Tasks ({st.tasks.length}):
+                          </div>
+                          <div style={{ display: "flex", flexDirection: "column", gap: 7, maxHeight: 260, overflowY: "auto" }}>
+                            {st.tasks.map((t) => {
+                              const v = vMap[t.id];
+                              const vStatus = v ? v.status : "not_sent";
+                              const isDone = t.status === "completed";
+
+                              return (
+                                <div
+                                  key={t.id}
+                                  style={{
+                                    padding: "8px 10px",
+                                    borderRadius: 8,
+                                    background: "#f8fafc",
+                                    border: "1px solid #e2e8f0",
+                                    fontSize: 12,
+                                  }}
+                                >
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 6 }}>
+                                    <div>
+                                      <strong style={{ color: "#0f172a" }}>#{t.id} {t.title}</strong>
+                                      <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>
+                                        Site: <span style={{ fontWeight: 600, color: "#334155" }}>{t.site_name || "General"}</span>
+                                        {t.due_date && ` · Due: ${new Date(t.due_date).toLocaleDateString()}`}
+                                      </div>
+                                    </div>
+
+                                    <div style={{ display: "flex", flexDirection: "column", gap: 3, alignItems: "flex-end" }}>
+                                      <span
+                                        style={{
+                                          padding: "2px 7px",
+                                          borderRadius: 10,
+                                          fontSize: 10.5,
+                                          fontWeight: 700,
+                                          background: isDone ? "#dcfce7" : "#fef9c3",
+                                          color: isDone ? "#15803d" : "#a16207",
+                                        }}
+                                      >
+                                        {isDone ? "Completed" : "Pending"}
+                                      </span>
+
+                                      <span
+                                        style={{
+                                          padding: "2px 7px",
+                                          borderRadius: 10,
+                                          fontSize: 10,
+                                          fontWeight: 700,
+                                          background:
+                                            vStatus === "completed"
+                                              ? "#ccfbf1"
+                                              : vStatus === "pending"
+                                              ? "#fef3c7"
+                                              : vStatus === "correction_sent"
+                                              ? "#fee2e2"
+                                              : "#f1f5f9",
+                                          color:
+                                            vStatus === "completed"
+                                              ? "#0f766e"
+                                              : vStatus === "pending"
+                                              ? "#b45309"
+                                              : vStatus === "correction_sent"
+                                              ? "#b91c1c"
+                                              : "#64748b",
+                                        }}
+                                      >
+                                        {vStatus === "completed"
+                                          ? "Verified"
+                                          : vStatus === "pending"
+                                          ? "Pending Verify"
+                                          : vStatus === "correction_sent"
+                                          ? "Correction Sent"
+                                          : "Not Verified"}
+                                      </span>
+                                    </div>
+                                  </div>
+
+                                  {v && (
+                                    <div style={{ fontSize: 10.5, color: "#64748b", marginTop: 4, borderTop: "1px dotted #e2e8f0", paddingTop: 3 }}>
+                                      Verifier: <strong>{v.verifier_name || v.verifier || "—"}</strong>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* SECTION 2: Project x Employee Matrix (Heads, Admin & Office Engineer) */}
+            {(() => {
+              const matrixTargetEmps = officeEmployees.filter((e) => {
+                const role = (e.role || "").toLowerCase().trim();
+                const dept = (e.department || "").toLowerCase().trim();
+                const isHead = role.includes("head");
+                const isAdminRole = role.includes("admin") || dept === "admin";
+                const isOfficeEng =
+                  dept === "engineer office" ||
+                  role.includes("estimator") ||
+                  role.includes("tender");
+                return isHead || isAdminRole || isOfficeEng;
+              });
+
+              const matrixUsernames = new Set(matrixTargetEmps.map((e) => e.username).filter(Boolean));
+
+              const matrixTasks = filteredTasks.filter((t) =>
+                matrixUsernames.has(t.assigned_to)
+              );
+
+              // Gather unique project / site names from all tasks of these employees
+              const projectsSet = new Set();
+              matrixTasks.forEach((t) => {
+                projectsSet.add((t.site_name || "General / Head Office").trim());
+              });
+              const matrixProjects = Array.from(projectsSet).sort((a, b) => a.localeCompare(b));
+
+              // Map counts: project -> empUsername -> completed count & total assigned
+              const matrixCounts = {};
+              const empCompletedTotals = {};
+              const empTotalAssigned = {};
+              let grandMatrixCompleted = 0;
+
+              matrixTargetEmps.forEach((e) => {
+                empCompletedTotals[e.username] = 0;
+                empTotalAssigned[e.username] = 0;
+              });
+
+              matrixProjects.forEach((proj) => {
+                matrixCounts[proj] = {};
+                matrixTargetEmps.forEach((e) => {
+                  matrixCounts[proj][e.username] = { completed: 0, total: 0 };
+                });
+              });
+
+              matrixTasks.forEach((t) => {
+                const proj = (t.site_name || "General / Head Office").trim();
+                if (!matrixCounts[proj]) {
+                  matrixCounts[proj] = {};
+                  matrixTargetEmps.forEach((e) => {
+                    matrixCounts[proj][e.username] = { completed: 0, total: 0 };
+                  });
+                }
+                if (matrixCounts[proj][t.assigned_to]) {
+                  matrixCounts[proj][t.assigned_to].total += 1;
+                  empTotalAssigned[t.assigned_to] = (empTotalAssigned[t.assigned_to] || 0) + 1;
+                  if (t.status === "completed") {
+                    matrixCounts[proj][t.assigned_to].completed += 1;
+                    empCompletedTotals[t.assigned_to] = (empCompletedTotals[t.assigned_to] || 0) + 1;
+                    grandMatrixCompleted += 1;
+                  }
+                }
+              });
+
+              return (
+                <div
+                  style={{
+                    background: "#ffffff",
+                    border: "1px solid #e2e8f0",
+                    borderRadius: 14,
+                    padding: "20px 22px",
+                    boxShadow: "0 2px 8px rgba(0,0,0,0.03)",
+                    marginTop: 10,
+                  }}
+                >
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+                    <div>
+                      <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#1e293b", display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, background: "#0284c7", color: "#ffffff", padding: "2px 7px", borderRadius: 6, fontWeight: 800 }}>2</span>
+                        Project × Employee Matrix
+                        <span style={{ fontSize: 11.5, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", padding: "2px 8px", borderRadius: 6 }}>
+                          Heads · Admin · Office Engineer
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#0f766e", background: "#ccfbf1", padding: "2px 8px", borderRadius: 12 }}>
+                          {rangeLabels[wvRange]}
+                        </span>
+                      </h3>
+                      <p style={{ margin: "4px 0 0", fontSize: 12.5, color: "#64748b" }}>
+                        Cross-tabulation matrix of projects/sites vs. Project Heads, Admins, and Office Engineers showing completed tasks for each site.
+                      </p>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: "#475569", background: "#f8fafc", padding: "6px 12px", borderRadius: 8, border: "1px solid #e2e8f0" }}>
+                      Total Tasks Completed in Matrix: <strong style={{ color: "#16a34a", fontSize: 13 }}>{grandMatrixCompleted}</strong>
+                    </div>
+                  </div>
+
+                  {matrixProjects.length === 0 ? (
+                    <div style={{ padding: "32px 16px", textAlign: "center", color: "#94a3b8", fontSize: 13, background: "#f8fafc", borderRadius: 10, border: "1px dashed #cbd5e1" }}>
+                      No tasks assigned to <strong>Heads, Admin, or Office Engineer</strong> employees in the <strong>{rangeLabels[wvRange]}</strong> period.
+                    </div>
+                  ) : (
+                    <div className="ap-table-wrap">
+                      <table className="ap-table" style={{ borderCollapse: "separate", borderSpacing: 0 }}>
+                        <thead>
+                          <tr style={{ background: "#f8fafc" }}>
+                            <th style={{ minWidth: 200, padding: "12px 14px", fontWeight: 700, color: "#334155" }}>
+                              Project / Site Name
+                            </th>
+                            {matrixTargetEmps.map((emp) => (
+                              <th
+                                key={emp.username}
+                                style={{
+                                  textAlign: "center",
+                                  padding: "10px 14px",
+                                  fontWeight: 700,
+                                  color: "#0f172a",
+                                  minWidth: 140,
+                                }}
+                              >
+                                <div style={{ fontSize: 13 }}>{emp.name}</div>
+                                <div style={{ fontSize: 11, fontWeight: 500, color: "#64748b" }}>
+                                  {emp.role || emp.department || "Office"}
+                                </div>
+                              </th>
+                            ))}
+                            <th
+                              style={{
+                                textAlign: "center",
+                                padding: "10px 14px",
+                                fontWeight: 800,
+                                color: "#0f766e",
+                                background: "#f0fdfa",
+                                minWidth: 120,
+                              }}
+                            >
+                              Project Total
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {matrixProjects.map((proj, pIdx) => {
+                            let projCompletedTotal = 0;
+                            let projTotalTasks = 0;
+
+                            return (
+                              <tr key={proj} style={{ background: pIdx % 2 === 0 ? "#ffffff" : "#fcfcfd" }}>
+                                <td style={{ fontWeight: 600, color: "#1e293b", padding: "12px 14px" }}>
+                                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: "#0284c7" }} />
+                                    {proj}
+                                  </div>
+                                </td>
+                                {matrixTargetEmps.map((emp) => {
+                                  const cell = matrixCounts[proj]?.[emp.username] || { completed: 0, total: 0 };
+                                  projCompletedTotal += cell.completed;
+                                  projTotalTasks += cell.total;
+
+                                  const hasCompleted = cell.completed > 0;
+                                  const hasTasks = cell.total > 0;
+
+                                  return (
+                                    <td
+                                      key={emp.username}
+                                      style={{
+                                        textAlign: "center",
+                                        padding: "10px 14px",
+                                      }}
+                                    >
+                                      {hasTasks ? (
+                                        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "center" }}>
+                                          <span
+                                            style={{
+                                              padding: "3px 10px",
+                                              borderRadius: 12,
+                                              fontSize: 12.5,
+                                              fontWeight: 700,
+                                              background: hasCompleted ? "#dcfce7" : "#f1f5f9",
+                                              color: hasCompleted ? "#15803d" : "#64748b",
+                                            }}
+                                          >
+                                            {cell.completed} done
+                                          </span>
+                                          {cell.total > cell.completed && (
+                                            <span style={{ fontSize: 10.5, color: "#94a3b8", marginTop: 2 }}>
+                                              of {cell.total} total
+                                            </span>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <span style={{ color: "#cbd5e1", fontSize: 13 }}>—</span>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                <td
+                                  style={{
+                                    textAlign: "center",
+                                    padding: "10px 14px",
+                                    fontWeight: 700,
+                                    background: "#f0fdfa",
+                                    color: "#0f766e",
+                                  }}
+                                >
+                                  <span style={{ fontSize: 13, fontWeight: 800 }}>{projCompletedTotal}</span>
+                                  {projTotalTasks > projCompletedTotal && (
+                                    <span style={{ fontSize: 11, color: "#64748b", display: "block" }}>
+                                      ({projTotalTasks} assigned)
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        <tfoot>
+                          <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0" }}>
+                            <td style={{ fontWeight: 800, color: "#0f172a", padding: "12px 14px" }}>
+                              Total Completed
+                            </td>
+                            {matrixTargetEmps.map((emp) => {
+                              const done = empCompletedTotals[emp.username] || 0;
+                              const tot = empTotalAssigned[emp.username] || 0;
+                              return (
+                                <td key={emp.username} style={{ textAlign: "center", padding: "12px 14px" }}>
+                                  <strong style={{ fontSize: 14, color: done > 0 ? "#16a34a" : "#64748b" }}>
+                                    {done}
+                                  </strong>
+                                  {tot > done && (
+                                    <span style={{ fontSize: 11, color: "#94a3b8", display: "block" }}>
+                                      ({tot} total)
+                                    </span>
+                                  )}
+                                </td>
+                              );
+                            })}
+                            <td
+                              style={{
+                                textAlign: "center",
+                                padding: "12px 14px",
+                                background: "#ccfbf1",
+                                color: "#0f766e",
+                              }}
+                            >
+                              <strong style={{ fontSize: 15, fontWeight: 900 }}>
+                                {grandMatrixCompleted}
+                              </strong>
+                            </td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        );
+      }
       case "fms-tracker":
         return (
           <div className="op-empty-state">

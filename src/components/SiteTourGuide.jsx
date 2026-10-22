@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useLayoutEffect, useRef } from "react";
 import "./SiteTourGuide.css";
 
 // ── Role Normalizer ──
@@ -410,6 +410,8 @@ export default function SiteTourGuide({ user, isApprover = false, onNavigateTab,
   const [chatInput, setChatInput] = useState("");
   const [onboarding, setOnboarding] = useState(null);
   const [storageReady, setStorageReady] = useState(false);
+  const [popoverPosition, setPopoverPosition] = useState(null);
+  const popoverRef = useRef(null);
   const welcomeStartRef = useRef(null);
   const loadedStorageKey = useRef(null);
   const modulesRef = useRef(null);
@@ -555,6 +557,46 @@ export default function SiteTourGuide({ user, isApprover = false, onNavigateTab,
       window.removeEventListener("scroll", update, true);
     };
   }, [activeTourId, currentStepIdx]);
+
+  useLayoutEffect(() => {
+    if (!activeTourId) {
+      setPopoverPosition(null);
+      return undefined;
+    }
+
+    const updatePopoverPosition = () => {
+      const popover = popoverRef.current;
+      if (!popover || window.innerWidth <= 600) return;
+
+      const { width, height } = popover.getBoundingClientRect();
+      const margin = 16;
+      const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+      const preferredLeft = spotlightRect
+        ? spotlightRect.left + (spotlightRect.width > 280 ? 20 : 0)
+        : (window.innerWidth - width) / 2;
+      const left = Math.min(maxLeft, Math.max(margin, preferredLeft));
+      const maxTop = Math.max(margin, window.innerHeight - height - margin);
+
+      if (!spotlightRect) {
+        setPopoverPosition({ top: Math.min(maxTop, Math.max(margin, (window.innerHeight - height) / 2)), left });
+        return;
+      }
+
+      const belowTop = spotlightRect.top + spotlightRect.height + 14;
+      const aboveTop = spotlightRect.top - height - 14;
+      const top = belowTop + height <= window.innerHeight - margin
+        ? belowTop
+        : aboveTop >= margin
+          ? aboveTop
+          : Math.min(maxTop, Math.max(margin, belowTop));
+
+      setPopoverPosition({ top, left });
+    };
+
+    updatePopoverPosition();
+    window.addEventListener("resize", updatePopoverPosition);
+    return () => window.removeEventListener("resize", updatePopoverPosition);
+  }, [activeTourId, currentStepIdx, spotlightRect]);
 
   useEffect(() => {
     if (!activeTour && !showWelcome && !isOpen) return undefined;
@@ -848,6 +890,7 @@ export default function SiteTourGuide({ user, isApprover = false, onNavigateTab,
 
           {/* Actionable Balloon Popover */}
           <div
+            ref={popoverRef}
             className="stg-popover"
             role="dialog"
             aria-labelledby="stg-popover-title"
@@ -861,22 +904,16 @@ export default function SiteTourGuide({ user, isApprover = false, onNavigateTab,
                     maxWidth: "none",
                     top: "auto",
                   }
-                : spotlightRect
-                ? {
-                    top: `${Math.min(
-                      window.innerHeight - 340,
-                      Math.max(20, spotlightRect.top + (spotlightRect.height > 160 ? 20 : spotlightRect.height + 14))
-                    )}px`,
-                    left: `${Math.min(
-                      window.innerWidth - 420,
-                      Math.max(16, spotlightRect.left + (spotlightRect.width > 280 ? 20 : 0))
-                    )}px`,
-                  }
-                : {
-                    top: "50%",
-                    left: "50%",
-                    transform: "translate(-50%, -50%)",
-                  }
+                : popoverPosition
+                  ? {
+                      top: `${popoverPosition.top}px`,
+                      left: `${popoverPosition.left}px`,
+                    }
+                  : {
+                      top: "50%",
+                      left: "50%",
+                      transform: "translate(-50%, -50%)",
+                    }
             }
           >
             <div className="stg-popover-header">
